@@ -7,12 +7,13 @@
  * start a sign-in.
  *
  * The behavioural tests run the page's real inline script in a `node:vm`
- * context against a minimal stand-in DOM, then click a button: there is no
- * DOM test environment in this repo, and asserting on the script's source
- * text alone would not show that the handler is wired up.
+ * context against a minimal stand-in DOM (see __helpers__/login-page-script),
+ * then click a button: there is no DOM test environment in this repo, and
+ * asserting on the script's source text alone would not show that the
+ * handler is wired up.
  */
-import * as vm from 'node:vm'
 import { describe, it, expect, vi } from 'vitest'
+import { jsonResponse, runPageScript } from './__helpers__/login-page-script.js'
 
 vi.mock('../better-auth.js', () => ({
   socialProviders: {
@@ -24,15 +25,13 @@ vi.mock('../better-auth.js', () => ({
 const { renderLoginPage } = await import('../routes/login-page.js')
 
 function render(
-  branding: Record<string, unknown> = {
-    epds_social_providers: ['google', 'github'],
-  },
+  overrides: Partial<Parameters<typeof renderLoginPage>[0]> = {},
 ): string {
   return renderLoginPage({
     flowId: 'flow-1',
     clientId: 'https://example.com/client-metadata.json',
     clientName: 'Example',
-    branding,
+    branding: { epds_social_providers: ['google', 'github'] },
     customCss: null,
     customFaviconUrl: null,
     customFaviconUrlDark: null,
@@ -45,121 +44,16 @@ function render(
     otpLength: 6,
     otpCharset: 'numeric',
     heartbeatEnabled: false,
+    ...overrides,
   })
 }
 
-/** The page's main inline script (the one that owns the login flow). */
-function mainScript(html: string): string {
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
-    (m) => m[1],
-  )
-  const main = scripts.find((s) => s.includes('var authBasePath'))
-  if (!main) throw new Error('login page main script not found')
-  return main
-}
-
-/**
- * A value that absorbs any property read, call or construction by returning
- * itself, so page-script initialisation that does not concern the social
- * buttons (OTP boxes, typo guard, heartbeat) runs without a real DOM.
- */
-function absorbing(): unknown {
-  const target = function () {}
-  const proxy: unknown = new Proxy(target, {
-    get: (_t, key) => {
-      if (key === Symbol.toPrimitive) return () => ''
-      if (key === 'length') return 0
-      return proxy
-    },
-    set: () => true,
-    apply: () => proxy,
-    construct: () => proxy as object,
-  })
-  return proxy
-}
-
-interface FakeButton {
-  disabled: boolean
-  getAttribute: (name: string) => string | null
-  addEventListener: (type: string, fn: () => unknown) => void
-  click: () => unknown
-}
-
-function fakeButton(provider: string): FakeButton {
-  let onClick: (() => unknown) | undefined
-  return {
-    disabled: false,
-    getAttribute: (name) => (name === 'data-social-provider' ? provider : null),
-    addEventListener: (type, fn) => {
-      if (type === 'click') onClick = fn
-    },
-    click: () => onClick?.(),
-  }
-}
-
-/**
- * Run the page script with fake Google/GitHub buttons and a stubbed
- * `fetch`, and return the handles a test needs to drive and observe it.
- */
-function runPage(fetchImpl: (url: string, init: RequestInit) => unknown) {
-  const buttons = { google: fakeButton('google'), github: fakeButton('github') }
-  const assign = vi.fn()
-  const fetchSpy = vi.fn(fetchImpl)
-  const windowListeners: Partial<Record<string, ((e: unknown) => void)[]>> = {}
-  // The shared flash region: records the text of the last message shown.
-  const flash = { text: '' }
-  const errorEl = {
-    classList: { add: () => undefined, remove: () => undefined },
-    replaceChildren: (frag?: { children: { textContent: string }[] }) => {
-      flash.text = frag ? frag.children.map((c) => c.textContent).join('') : ''
-    },
-  }
-  const fakeDocument: Record<string, unknown> = {
-    querySelectorAll: (selector: string) =>
-      selector === '[data-social-provider]'
-        ? [buttons.google, buttons.github]
-        : [],
-    getElementById: (id: string) =>
-      id === 'error-msg' ? errorEl : absorbing(),
-    createDocumentFragment: () => {
-      const children: unknown[] = []
-      return { children, appendChild: (n: unknown) => children.push(n) }
-    },
-    createElement: () => ({ textContent: '' }),
-  }
-  const document = new Proxy(absorbing() as object, {
-    get: (target, key) =>
-      typeof key === 'string' && key in fakeDocument
-        ? fakeDocument[key]
-        : (target as Record<PropertyKey, unknown>)[key],
-  })
-  const window = {
-    location: { assign, href: '', search: '' },
-    addEventListener: (type: string, fn: (e: unknown) => void) => {
-      ;(windowListeners[type] ??= []).push(fn)
-    },
-  }
-  vm.runInNewContext(mainScript(render()), {
-    document,
-    window,
-    fetch: fetchSpy,
-    setInterval: () => 0,
-    clearInterval: () => undefined,
-    setTimeout: () => 0,
-    clearTimeout: () => undefined,
-    navigator: absorbing(),
-    URL,
-    console,
-  })
-  return { buttons, assign, fetchSpy, windowListeners, flash }
-}
-
-function jsonResponse(status: number, body: unknown) {
-  return Promise.resolve({
-    ok: status >= 200 && status < 300,
-    status,
-    json: () => Promise.resolve(body),
-  })
+/** Run the page script of `html` (by default the plain login page). */
+function runPage(
+  fetchImpl: (url: string, init: RequestInit) => unknown,
+  html: string = render(),
+) {
+  return runPageScript(html, fetchImpl)
 }
 
 /** Authorization URLs of the shape better-auth returns for each provider. */
@@ -198,6 +92,7 @@ describe('renderLoginPage social sign-in buttons', () => {
       expect(JSON.parse(init.body as string)).toEqual({
         provider,
         callbackURL: '/auth/complete',
+        errorCallbackURL: '/auth/complete',
       })
       expect(assign).toHaveBeenCalledWith(providerUrl)
     },
@@ -288,27 +183,43 @@ describe('renderLoginPage social sign-in buttons', () => {
 
     expect(buttons.google.disabled).toBe(false)
   })
+
+  it('shows the initial error from a returned social sign-in on load', () => {
+    const message = 'Sign-in was cancelled. You can try again.'
+    const { flash } = runPage(
+      () => jsonResponse(200, {}),
+      render({ initialError: message }),
+    )
+    expect(flash.text).toBe(message)
+  })
+
+  it('shows nothing on load without an initial error', () => {
+    const { flash } = runPage(() => jsonResponse(200, {}))
+    expect(flash.text).toBe('')
+  })
 })
 
 describe('renderLoginPage social sign-in opt-in', () => {
   it('renders no social buttons when the client does not ask for any', () => {
-    const html = render({})
+    const html = render({ branding: {} })
     expect(html).not.toContain('data-social-provider="')
     expect(html).not.toContain('or continue with')
   })
 
   it('renders only the providers the client lists', () => {
-    const html = render({ epds_social_providers: ['google'] })
+    const html = render({ branding: { epds_social_providers: ['google'] } })
     expect(html).toContain('data-social-provider="google"')
     expect(html).not.toContain('data-social-provider="github"')
   })
 
   it('ignores unknown providers and a non-array value', () => {
-    expect(render({ epds_social_providers: ['facebook'] })).not.toContain(
-      'data-social-provider="',
-    )
-    expect(render({ epds_social_providers: 'google' })).not.toContain(
-      'data-social-provider="',
-    )
+    expect(
+      render({ branding: { epds_social_providers: ['facebook'] } }),
+    ).not.toContain('data-social-provider="')
+    expect(
+      render({
+        branding: { epds_social_providers: 'google' as unknown as string[] },
+      }),
+    ).not.toContain('data-social-provider="')
   })
 })

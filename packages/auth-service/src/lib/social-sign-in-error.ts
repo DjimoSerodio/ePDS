@@ -1,0 +1,78 @@
+/**
+ * Errors from a social (Google / GitHub) sign-in, carried back to the
+ * login page.
+ *
+ * The login page's social buttons pass `errorCallbackURL: '/auth/complete'`
+ * to better-auth, so a sign-in that is cancelled at the provider or refused
+ * by better-auth lands on /auth/complete with `?error=<code>` instead of on
+ * better-auth's bare /api/auth/error page. /auth/complete reduces the code
+ * to one of a few {@link SocialSignInErrorCode}s and sends the user back to
+ * the login page for the same flow with `epds_social_error=<code>`, where
+ * it is shown as a fixed message. Nothing from the query string is ever
+ * reflected into the page.
+ */
+
+/** Query parameter that carries the error back to GET /oauth/authorize. */
+export const SOCIAL_ERROR_PARAM = 'epds_social_error'
+
+export type SocialSignInErrorCode =
+  | 'cancelled'
+  | 'email_unverified'
+  | 'no_email'
+  | 'failed'
+
+const MESSAGES: Record<SocialSignInErrorCode, string> = {
+  cancelled:
+    'Sign-in was cancelled. You can try again, or sign in with your email instead.',
+  email_unverified:
+    'That account could not confirm that this email address is yours. Please sign in with a code sent to your email instead.',
+  no_email:
+    'That account did not share an email address. Please sign in with your email instead.',
+  failed:
+    'Could not sign in with that account. Please try again, or sign in with your email instead.',
+}
+
+/**
+ * Reduce an error code from better-auth's OAuth callback (or the provider,
+ * which better-auth passes through) to a {@link SocialSignInErrorCode}.
+ *
+ * - `access_denied`: the user cancelled at Google / GitHub.
+ * - `account_not_linked`: the email belongs to an existing user and the
+ *   provider did not prove control of it (see lib/google-email-verified.ts).
+ * - `email_not_found`: the provider returned no email address.
+ */
+export function socialSignInErrorCode(
+  betterAuthError: unknown,
+): SocialSignInErrorCode {
+  switch (betterAuthError) {
+    case 'access_denied':
+      return 'cancelled'
+    case 'account_not_linked':
+      return 'email_unverified'
+    case 'email_not_found':
+      return 'no_email'
+    default:
+      return 'failed'
+  }
+}
+
+/** The message for an `epds_social_error` value, or null if it is unknown. */
+export function socialSignInErrorMessage(code: unknown): string | null {
+  return typeof code === 'string' && Object.hasOwn(MESSAGES, code)
+    ? MESSAGES[code as SocialSignInErrorCode]
+    : null
+}
+
+/**
+ * The login page URL for an existing flow, carrying `code`. Mirrors the
+ * redirect /auth/complete already uses when it finds no session.
+ */
+export function loginPageUrlWithError(
+  flow: { requestUri: string; clientId: string | null },
+  code: SocialSignInErrorCode,
+): string {
+  const params = new URLSearchParams({ request_uri: flow.requestUri })
+  if (flow.clientId) params.set('client_id', flow.clientId)
+  params.set(SOCIAL_ERROR_PARAM, code)
+  return `/oauth/authorize?${params.toString()}`
+}

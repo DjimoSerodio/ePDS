@@ -11,6 +11,9 @@
  * Flow:
  *   1. Read epds_auth_flow cookie → get flow_id
  *   2. Look up auth_flow row → get request_uri, client_id
+ *   2b. Social sign-in failed or was cancelled (?error=, this route is also
+ *       the social buttons' errorCallbackURL) → back to the login page for
+ *       this flow with a fixed message (lib/social-sign-in-error.ts)
  *   3. Get better-auth session → extract verified email
  *   4. Check if this is a new user (no PDS account for email)
  *   5a. New user, handle_mode='random' → HMAC-signed redirect to pds-core (random handle generated server-side)
@@ -34,6 +37,10 @@ import { getDidByEmail } from '../lib/get-did-by-email.js'
 import { pingParRequest } from '../lib/ping-par-request.js'
 import { requireInternalEnv } from '../lib/require-internal-env.js'
 import { resolveRecoveryEmail } from '../lib/resolve-recovery-email.js'
+import {
+  loginPageUrlWithError,
+  socialSignInErrorCode,
+} from '../lib/social-sign-in-error.js'
 
 const logger = createLogger('auth:complete')
 
@@ -227,6 +234,20 @@ export function createCompleteRouter(
       logger.warn({ flowId }, 'auth_flow not found or expired')
       res.clearCookie(AUTH_FLOW_COOKIE)
       await exitWithSignInTimeout(res)
+      return
+    }
+
+    // Step 2b: a social sign-in that was cancelled or refused comes back
+    // here via errorCallbackURL with ?error=<code>. Return to the login
+    // page for this flow before reading any session: a session left in
+    // this browser by an earlier sign-in must not be used instead.
+    if (req.query.error !== undefined) {
+      const code = socialSignInErrorCode(req.query.error)
+      logger.info(
+        { flowId, error: req.query.error, code },
+        'Social sign-in did not complete: returning to the login page',
+      )
+      res.redirect(303, loginPageUrlWithError(flow, code))
       return
     }
 

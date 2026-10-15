@@ -11,6 +11,8 @@
  *   4. Render login page with:
  *      - Email OTP form (submits to better-auth /api/auth/* endpoints)
  *      - Social login buttons (only for configured providers)
+ *      - A fixed error message when a social sign-in came back with
+ *        ?epds_social_error= (see lib/social-sign-in-error.ts)
  *      - "Recover with backup email" link (shown by default; clients
  *        hide via --recovery-link-display: none in branding.css)
  *      - Client branding from OAuth metadata
@@ -69,6 +71,10 @@ import {
 } from '../lib/session-reuse.js'
 import { fetchDeviceAccountEmails } from '../lib/fetch-device-accounts.js'
 import { AUTH_FLOW_COOKIE, AUTH_FLOW_TTL_MS } from '../lib/auth-flow.js'
+import {
+  SOCIAL_ERROR_PARAM,
+  socialSignInErrorMessage,
+} from '../lib/social-sign-in-error.js'
 
 const logger = createLogger('auth:login-page')
 
@@ -221,7 +227,18 @@ export function createLoginPageRouter(ctx: AuthServiceContext): Router {
     // form. This skip flag does NOT affect prompt=login alone: pds-core's
     // sign-in-view bounce also sets prompt=login (without the skip flag)
     // and expects the hint to resolve normally so the OTP step renders.
-    const skipParHint = req.query.epds_skip_par_hint === '1'
+    //
+    // A social sign-in that was cancelled or refused comes back from
+    // /auth/complete with ?epds_social_error= (lib/social-sign-in-error.ts).
+    // It was started from this page, so render this page again with the
+    // message: never hand it to pds-core's chooser, which would drop the
+    // message and could auto-select the hinted account for someone who had
+    // just chosen "Another account". That redirect cannot carry prompt=login
+    // or epds_skip_par_hint back, so the PAR hint is ignored as well and
+    // the email step renders, which is what the message asks for.
+    const socialErrorReturn = req.query[SOCIAL_ERROR_PARAM] !== undefined
+    const skipParHint =
+      req.query.epds_skip_par_hint === '1' || socialErrorReturn
     const pdsInternalUrl = ensurePdsUrl(
       process.env.PDS_INTERNAL_URL,
       ctx.config.pdsPublicUrl,
@@ -260,6 +277,7 @@ export function createLoginPageRouter(ctx: AuthServiceContext): Router {
     }
 
     if (
+      !socialErrorReturn &&
       shouldReuseSession(sessionReuseReq, {
         resolvedEmail,
         deviceBoundEmails,
@@ -418,7 +436,8 @@ export function createLoginPageRouter(ctx: AuthServiceContext): Router {
     // reuse `resolvedEmail` here rather than re-fetching. On the "Another
     // account" rebind path (issue #138) `epds_skip_par_hint=1` upstream
     // suppresses both URL and PAR hint resolution, so resolvedEmail is null
-    // and the email step falls out without a special case here.
+    // and the email step falls out without a special case here. A social
+    // sign-in error return skips the PAR hint the same way (see above).
     const hasLoginHint = !!resolvedEmail
     const initialStep = hasLoginHint ? 'otp' : 'email'
 
@@ -464,6 +483,7 @@ export function createLoginPageRouter(ctx: AuthServiceContext): Router {
         otpLength: ctx.config.otpLength,
         otpCharset: ctx.config.otpCharset,
         heartbeatEnabled: heartbeatEnabledFor(req),
+        initialError: socialSignInErrorMessage(req.query[SOCIAL_ERROR_PARAM]),
       }),
     )
   })
@@ -498,6 +518,11 @@ export function renderLoginPage(opts: {
    * `?no_heartbeat=1` test toggle (see `heartbeatEnabledFor`).
    */
   heartbeatEnabled: boolean
+  /**
+   * Error shown in the flash region on load. Only ever one of the fixed
+   * messages from socialSignInErrorMessage(), never request text.
+   */
+  initialError?: string | null
 }): string {
   const b = opts.branding
   const appName = b.client_name || opts.clientName || 'Certified'
@@ -1295,6 +1320,10 @@ export function renderLoginPage(opts: {
               body: JSON.stringify({
                 provider: provider,
                 callbackURL: '/auth/complete',
+                // Cancels and refusals come back to /auth/complete with
+                // ?error= too, which returns to this page with a message,
+                // rather than ending on better-auth's bare error page.
+                errorCallbackURL: '/auth/complete',
               }),
             });
             var data = await res.json().catch(function() { return {}; });
@@ -1607,6 +1636,11 @@ export function renderLoginPage(opts: {
         startHeartbeat();
         refreshResendVisibility();
       }
+
+      // A social sign-in that was cancelled or refused returns here with
+      // a fixed message chosen server-side (see /auth/complete).
+      var initialError = ${JSON.stringify(opts.initialError ?? '')};
+      if (initialError) showError(initialError);
     })();
   </script>
 </body>
