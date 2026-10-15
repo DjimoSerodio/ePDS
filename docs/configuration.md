@@ -181,9 +181,6 @@ provider does not change the login page of clients that did not ask for it.
 | `GITHUB_CLIENT_ID`     | GitHub OAuth client ID — [GitHub Developer Settings](https://github.com/settings/developers) |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret                                                                   |
 
-The buttons are instance-wide: once a provider is configured it appears on
-the login page for every OAuth client of this ePDS.
-
 #### Redirect URIs
 
 better-auth handles the provider callback under `/api/auth` on the auth
