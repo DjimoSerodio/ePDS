@@ -1248,6 +1248,32 @@ export function renderLoginPage(opts: {
       var socialButtons = Array.prototype.slice.call(
         document.querySelectorAll('[data-social-provider]'),
       );
+      // Only ever leave this page for the provider's own authorization
+      // server: an https URL on the host better-auth sends that provider
+      // to. Anything else in the response is treated as a failed start.
+      var socialProviderOrigins = {
+        google: 'https://accounts.google.com',
+        github: 'https://github.com',
+      };
+      function socialProviderUrl(provider, url) {
+        if (typeof url !== 'string') return null;
+        var expected = Object.prototype.hasOwnProperty.call(
+          socialProviderOrigins,
+          provider,
+        )
+          ? socialProviderOrigins[provider]
+          : null;
+        if (!expected) return null;
+        try {
+          var parsed = new URL(url);
+          if (parsed.protocol !== 'https:' || parsed.origin !== expected) {
+            return null;
+          }
+          return parsed.href;
+        } catch (err) {
+          return null;
+        }
+      }
       // A page restored from the back/forward cache keeps its script
       // state, so a button disabled on the way out to the provider would
       // otherwise still be disabled when the user comes back.
@@ -1261,18 +1287,20 @@ export function renderLoginPage(opts: {
           if (btn.disabled) return;
           btn.disabled = true;
           clearError();
+          var provider = btn.getAttribute('data-social-provider');
           try {
             var res = await fetch(authBasePath + '/sign-in/social', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                provider: btn.getAttribute('data-social-provider'),
+                provider: provider,
                 callbackURL: '/auth/complete',
               }),
             });
             var data = await res.json().catch(function() { return {}; });
-            if (res.ok && data.url) {
-              window.location.assign(data.url);
+            var target = res.ok && data ? socialProviderUrl(provider, data.url) : null;
+            if (target) {
+              window.location.assign(target);
               return;
             }
           } catch (err) {}

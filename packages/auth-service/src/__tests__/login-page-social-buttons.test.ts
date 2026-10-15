@@ -148,6 +148,7 @@ function runPage(fetchImpl: (url: string, init: RequestInit) => unknown) {
     setTimeout: () => 0,
     clearTimeout: () => undefined,
     navigator: absorbing(),
+    URL,
     console,
   })
   return { buttons, assign, fetchSpy, windowListeners, flash }
@@ -160,6 +161,14 @@ function jsonResponse(status: number, body: unknown) {
     json: () => Promise.resolve(body),
   })
 }
+
+/** Authorization URLs of the shape better-auth returns for each provider. */
+const PROVIDER_URLS = {
+  google:
+    'https://accounts.google.com/o/oauth2/v2/auth?client_id=google-id&state=s',
+  github:
+    'https://github.com/login/oauth/authorize?client_id=github-id&state=s',
+} as const
 
 describe('renderLoginPage social sign-in buttons', () => {
   it('never links to /sign-in/social with a GET', () => {
@@ -175,7 +184,7 @@ describe('renderLoginPage social sign-in buttons', () => {
   it.each(['google', 'github'] as const)(
     'clicking %s POSTs the provider and follows the returned URL',
     async (provider) => {
-      const providerUrl = `https://${provider}.example/authorize?state=s`
+      const providerUrl = PROVIDER_URLS[provider]
       const { buttons, assign, fetchSpy } = runPage(() =>
         jsonResponse(200, { url: providerUrl, redirect: true }),
       )
@@ -207,7 +216,7 @@ describe('renderLoginPage social sign-in buttons', () => {
     await buttons.google.click()
     expect(fetchSpy).toHaveBeenCalledTimes(1)
 
-    resolveFetch(await jsonResponse(200, { url: 'https://google.example/' }))
+    resolveFetch(await jsonResponse(200, { url: PROVIDER_URLS.google }))
     await first
   })
 
@@ -229,9 +238,48 @@ describe('renderLoginPage social sign-in buttons', () => {
     },
   )
 
+  it.each([
+    ['an http URL', 'google', 'http://accounts.google.com/o/oauth2/v2/auth'],
+    ['another host', 'google', 'https://evil.example/o/oauth2/v2/auth'],
+    [
+      'a look-alike host',
+      'google',
+      'https://accounts.google.com.evil.example/o/oauth2/v2/auth',
+    ],
+    ['a Google URL for GitHub', 'github', PROVIDER_URLS.google],
+    ['a GitHub URL for Google', 'google', PROVIDER_URLS.github],
+    ['an explicit port', 'github', 'https://github.com:8443/login/oauth'],
+    ['a javascript: URL', 'google', 'javascript:alert(1)'],
+    ['a relative URL', 'github', '/login/oauth/authorize'],
+    ['a protocol-relative URL', 'github', '//github.com/login/oauth/authorize'],
+    ['a non-string URL', 'google', { href: PROVIDER_URLS.google }],
+  ] as const)(
+    'refuses to follow %s and shows the error',
+    async (_label, provider, url) => {
+      const { buttons, assign, flash } = runPage(() =>
+        jsonResponse(200, { url, redirect: true }),
+      )
+
+      await buttons[provider].click()
+
+      expect(assign).not.toHaveBeenCalled()
+      expect(flash.text).toBe('Could not start sign-in. Please try again.')
+      expect(buttons[provider].disabled).toBe(false)
+    },
+  )
+
+  it('shows the error for a JSON null body', async () => {
+    const { buttons, assign, flash } = runPage(() => jsonResponse(200, null))
+
+    await buttons.google.click()
+
+    expect(assign).not.toHaveBeenCalled()
+    expect(flash.text).toBe('Could not start sign-in. Please try again.')
+  })
+
   it('re-enables the buttons when the page is restored from the back/forward cache', async () => {
     const { buttons, windowListeners } = runPage(() =>
-      jsonResponse(200, { url: 'https://google.example/' }),
+      jsonResponse(200, { url: PROVIDER_URLS.google }),
     )
     await buttons.google.click()
     expect(buttons.google.disabled).toBe(true)
