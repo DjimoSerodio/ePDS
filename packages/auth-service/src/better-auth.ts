@@ -17,9 +17,11 @@ import { APIError, createAuthMiddleware } from 'better-auth/api'
 import { generateRandomString } from 'better-auth/crypto'
 import { getMigrations } from 'better-auth/db'
 import { emailOTP } from 'better-auth/plugins'
+import type { GithubOptions, GoogleOptions } from 'better-auth/social-providers'
 import Database from 'better-sqlite3'
 import type { EmailSender } from './email/sender.js'
 import { getDidByEmail } from './lib/get-did-by-email.js'
+import { mapGoogleProfileToUser } from './lib/google-email-verified.js'
 import { ensurePdsUrl } from './lib/pds-url.js'
 
 export type BetterAuthInstance = ReturnType<typeof createBetterAuth>
@@ -138,25 +140,37 @@ export function isOtpVerifyPath(path: string): boolean {
 
 const AUTH_FLOW_COOKIE = 'epds_auth_flow'
 
+/** The social providers passed to better-auth, keyed by provider id. */
+export interface SocialProvidersConfig {
+  google?: GoogleOptions
+  github?: GithubOptions
+}
+
 /**
  * Build the social providers config from env vars.
  * Only includes providers where both client ID and secret are set.
+ *
+ * Google's `email_verified` claim is not used as-is: `mapProfileToUser`
+ * replaces it with a strict check that also requires Google to be
+ * authoritative for the address (see lib/google-email-verified.ts).
  */
-function buildSocialProviders(): Record<
-  string,
-  { clientId: string; clientSecret: string }
-> {
-  const providers: Record<string, { clientId: string; clientSecret: string }> =
-    {}
+export function buildSocialProviders(
+  env: NodeJS.ProcessEnv = process.env,
+): SocialProvidersConfig {
+  const providers: SocialProvidersConfig = {}
 
-  const googleId = process.env.GOOGLE_CLIENT_ID
-  const googleSecret = process.env.GOOGLE_CLIENT_SECRET
+  const googleId = env.GOOGLE_CLIENT_ID
+  const googleSecret = env.GOOGLE_CLIENT_SECRET
   if (googleId && googleSecret) {
-    providers.google = { clientId: googleId, clientSecret: googleSecret }
+    providers.google = {
+      clientId: googleId,
+      clientSecret: googleSecret,
+      mapProfileToUser: mapGoogleProfileToUser,
+    }
   }
 
-  const githubId = process.env.GITHUB_CLIENT_ID
-  const githubSecret = process.env.GITHUB_CLIENT_SECRET
+  const githubId = env.GITHUB_CLIENT_ID
+  const githubSecret = env.GITHUB_CLIENT_SECRET
   if (githubId && githubSecret) {
     providers.github = { clientId: githubId, clientSecret: githubSecret }
   }
@@ -165,10 +179,7 @@ function buildSocialProviders(): Record<
 }
 
 /** Social providers that were configured — exported for use by the login page. */
-export let socialProviders: Record<
-  string,
-  { clientId: string; clientSecret: string }
-> = {}
+export let socialProviders: SocialProvidersConfig = {}
 
 /**
  * Create a better-auth instance wired to the given EmailSender and EpdsDb.

@@ -13,28 +13,7 @@
  * session and issues an HMAC-signed epds-callback.
  */
 import { describe, it, expect } from 'vitest'
-
-/** Simulate buildSocialProviders() logic from better-auth.ts */
-function buildSocialProviders(
-  env: Record<string, string | undefined>,
-): Record<string, { clientId: string; clientSecret: string }> {
-  const providers: Record<string, { clientId: string; clientSecret: string }> =
-    {}
-
-  const googleId = env.GOOGLE_CLIENT_ID
-  const googleSecret = env.GOOGLE_CLIENT_SECRET
-  if (googleId && googleSecret) {
-    providers.google = { clientId: googleId, clientSecret: googleSecret }
-  }
-
-  const githubId = env.GITHUB_CLIENT_ID
-  const githubSecret = env.GITHUB_CLIENT_SECRET
-  if (githubId && githubSecret) {
-    providers.github = { clientId: githubId, clientSecret: githubSecret }
-  }
-
-  return providers
-}
+import { buildSocialProviders } from '../better-auth.js'
 
 describe('Social provider detection', () => {
   it('returns empty object when no env vars set', () => {
@@ -48,8 +27,8 @@ describe('Social provider detection', () => {
       GOOGLE_CLIENT_SECRET: 'google-client-secret',
     })
     expect('google' in providers).toBe(true)
-    expect(providers.google.clientId).toBe('google-client-id')
-    expect(providers.google.clientSecret).toBe('google-client-secret')
+    expect(providers.google?.clientId).toBe('google-client-id')
+    expect(providers.google?.clientSecret).toBe('google-client-secret')
   })
 
   it('enables GitHub when both GITHUB env vars set', () => {
@@ -58,7 +37,7 @@ describe('Social provider detection', () => {
       GITHUB_CLIENT_SECRET: 'github-client-secret',
     })
     expect('github' in providers).toBe(true)
-    expect(providers.github.clientId).toBe('github-client-id')
+    expect(providers.github?.clientId).toBe('github-client-id')
   })
 
   it('enables both Google and GitHub simultaneously', () => {

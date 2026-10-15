@@ -116,14 +116,15 @@ this area's main gap: `login-page.ts`, `consent.ts`, `recovery.ts`, `account-log
 
 **What can be tested:**
 
-- `buildSocialProviders()` is already tested (indirectly) in
-  `social-providers.test.ts` by reimplementing the logic.
-- The social provider detection could be tested directly if
-  `buildSocialProviders` were exported.
+- `buildSocialProviders()` is exported and tested directly in
+  `social-providers.test.ts`.
+- `better-auth-social-sign-in.test.ts` runs the Google provider config
+  through a real better-auth instance on in-memory SQLite, using
+  better-auth's ID-token sign-in (no round trip to Google) with the
+  provider's signature check stubbed.
 
 **Recommended strategy:**
 
-- Consider exporting `buildSocialProviders` for direct unit testing.
 - The OTP email wiring is best verified by integration or e2e tests
   that trigger a real OTP flow.
 - `extractOtp` in `e2e/support/mailpit.ts` uses heuristic regex patterns
