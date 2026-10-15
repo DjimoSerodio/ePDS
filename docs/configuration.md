@@ -181,6 +181,111 @@ provider does not change the login page of clients that did not ask for it.
 | `GITHUB_CLIENT_ID`     | GitHub OAuth client ID — [GitHub Developer Settings](https://github.com/settings/developers) |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth client secret                                                                   |
 
+The buttons are instance-wide: once a provider is configured it appears on
+the login page for every OAuth client of this ePDS.
+
+#### Redirect URIs
+
+better-auth handles the provider callback under `/api/auth` on the auth
+service, so register exactly these URIs with the provider (one per auth
+hostname, e.g. one for each environment):
+
+| Provider | Redirect / callback URI                            |
+| -------- | -------------------------------------------------- |
+| Google   | `https://<AUTH_HOSTNAME>/api/auth/callback/google` |
+| GitHub   | `https://<AUTH_HOSTNAME>/api/auth/callback/github` |
+
+#### Google setup
+
+1. In the Google Cloud Console, create an OAuth client of type **Web
+   application** and add the Google redirect URI above as an authorised
+   redirect URI.
+2. On the OAuth consent screen (in the current console: Google Auth
+   Platform → Branding, Audience and Data Access), request only the
+   `openid`, `email` and `profile` scopes; ePDS asks for nothing else.
+3. Set the publishing status to **In production**. While it is
+   **Testing**, only the test users listed on the consent screen (at
+   most 100) can sign in.
+4. Set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` on the auth service
+   and restart it.
+
+#### Which social sign-ins are trusted
+
+The email address is the only link between a social sign-in and a PDS
+account, so ePDS accepts a social sign-in only when the provider proves
+control of the address:
+
+- **Google:** the ID token's `email_verified` must be `true` (a boolean,
+  or the exact string `"true"`), and Google must be authoritative for the
+  address: a `@gmail.com` / `@googlemail.com` address, or a Google
+  Workspace account (the token carries an `hd` claim). For any other
+  address Google only checked it once, when the Google account was
+  created, so ePDS treats it as unverified
+  ([Google's guidance](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token)).
+- **GitHub:** the `verified` flag GitHub's `/user/emails` API reports for
+  the address used (the profile's public email, otherwise the primary
+  one). GitHub does not host email addresses, so that flag can be stale:
+  an address that has changed hands stays verified on the GitHub account
+  that confirmed it years ago. Enable GitHub only if that risk is
+  acceptable for your instance.
+
+An unverified address never creates a user, a PDS account, or a session
+ePDS honours: the user is returned to the login page with a message asking
+them to sign in with an email code instead. A cancel at the provider also
+returns to the login page.
+
+#### If Google or GitHub was configured before this release
+
+Social sign-ins made under the earlier, looser rules left rows in the
+better-auth tables of the auth service's database (`DB_LOCATION`). Most of
+them can no longer be used: an unverified user cannot sign in, and when
+the address's owner proves the address (with an email code, or a Google
+sign-in Google is authoritative for), this release removes the social
+identities linked to that user and signs out its sessions before signing
+the owner in. Two kinds of row still have to be removed by hand:
+
+- **A social identity linked to a verified user.** An earlier release
+  linked, for example, a Google identity on a non-Gmail address to the
+  existing user with that address. This release cannot tell it apart from
+  a good link, and better-auth signs a linked identity straight into its
+  user without checking the email again, so that identity still signs in
+  as the address's owner.
+- **A user whose `emailVerified` is stored as text.** An earlier release
+  could store Google's claim as the text `'true'` or `'false'`. This
+  release treats such a user as unverified, but an email code only marks
+  a user verified when the stored value is false, so the address's owner
+  cannot sign in until the row is removed.
+
+Remove all Google and GitHub links, and every user whose email is not
+verified, once after upgrading. This is safe: PDS accounts are not
+touched (ePDS finds them by email address), people who signed in with an
+email code keep their user, and Gmail and Workspace identities (and
+GitHub ones with a verified address) link again by themselves on their
+next sign-in. The affected people are signed out.
+
+Back up the database, then, with the `sqlite3` shell, look first
+(read-only):
+
+```sql
+SELECT u.email, u.emailVerified, a.providerId
+  FROM user u LEFT JOIN account a
+    ON a.userId = u.id AND a.providerId IN ('google', 'github')
+ WHERE a.id IS NOT NULL OR u.emailVerified IS NOT 1;
+```
+
+and remove them:
+
+```sql
+DELETE FROM session
+ WHERE userId IN (SELECT userId FROM account
+                   WHERE providerId IN ('google', 'github'))
+    OR userId IN (SELECT id FROM user WHERE emailVerified IS NOT 1);
+DELETE FROM account WHERE providerId IN ('google', 'github');
+DELETE FROM user WHERE emailVerified IS NOT 1;
+```
+
+Use `IS NOT 1`, not `= 0`: `= 0` misses the users stored as text.
+
 ### Email
 
 | Variable                         | Description                                                                                                                                                                                                            |

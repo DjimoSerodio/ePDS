@@ -44,11 +44,36 @@ Feature: Social login (Google, GitHub)
   # --- Account linking ---
 
   Scenario: Same email via social login uses existing PDS account
-    Given "alice@example.com" has a PDS account (created via email OTP)
-    When "alice@example.com" signs in via Google
+    Given "alice@gmail.com" has a PDS account (created via email OTP)
+    When "alice@gmail.com" signs in via Google
     Then the same PDS account is used (not a new one)
 
   Scenario: Different email via social login creates a separate account
     Given "alice@example.com" has a PDS account
     When the user signs in via Google with "alice@gmail.com"
     Then a new PDS account is created for "alice@gmail.com"
+
+  # --- Which sign-ins are trusted ---
+
+  Scenario: Google is not trusted for an address it does not host
+    Given "alice@example.com" has a PDS account (created via email OTP)
+    When the user signs in via Google with "alice@example.com"
+    And Google's ID token has no "hd" claim
+    Then the browser returns to the login page
+    And the login page asks the user to sign in with an email code instead
+    And no session is created for "alice@example.com"
+
+  Scenario: A Google Workspace address is trusted
+    Given "alice@example.com" has a PDS account (created via email OTP)
+    When the user signs in via Google with "alice@example.com"
+    And Google's ID token has the "hd" claim "example.com"
+    Then the same PDS account is used (not a new one)
+
+  # --- Errors ---
+
+  Scenario: Cancel at Google returns to the login page
+    Given Google social login is configured
+    When the user clicks "Sign in with Google" on the login page
+    And the user cancels on Google's consent screen
+    Then the browser returns to the login page
+    And the login page says that sign-in was cancelled
