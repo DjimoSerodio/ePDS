@@ -13,6 +13,7 @@
  * into the database, bypassing the hooks, as a release before them would
  * have left them.
  */
+import type Database from 'better-sqlite3'
 import { getMigrations } from 'better-auth/db'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EpdsDb } from '@certified-app/shared'
@@ -24,6 +25,7 @@ import {
 } from '../better-auth.js'
 import type { EmailSender } from '../email/sender.js'
 import { mapGoogleProfileToUser } from '../lib/google-email-verified.js'
+import { hasVerifiedEmail } from '../lib/verified-email.js'
 import { signInWithGoogleRedirect } from './__helpers__/google-sign-in.js'
 
 vi.mock('../lib/get-did-by-email.js', () => ({
@@ -103,6 +105,20 @@ async function seedEarlierRelease(
   })
   const session = await ctx.internalAdapter.createSession(row.id)
   return { userId: row.id, sessionToken: session.token }
+}
+
+/**
+ * Overwrite a user's `emailVerified` with text, as an earlier release could
+ * store Google's claim. better-auth's adapter would turn a string into a
+ * number on write, so this goes straight to SQLite.
+ */
+function storeEmailVerifiedAsText(
+  auth: Auth,
+  userId: string,
+  text: 'true' | 'false',
+) {
+  const db = auth.options.database as unknown as Database.Database
+  db.prepare('UPDATE user SET emailVerified = ? WHERE id = ?').run(text, userId)
 }
 
 describe('createBetterAuth wiring', () => {
@@ -207,6 +223,48 @@ describe('an email becoming verified (createBetterAuth)', () => {
     ).toBe('/auth/complete')
     user = await storedUser(auth, 'alice@gmail.com')
     expect(user?.accounts.map((a) => a.providerId)).toEqual(['google'])
+  })
+
+  it('signs in a user an earlier release stored as the text "true" by email code', async () => {
+    const auth = await makeAuth()
+    const { userId } = await seedEarlierRelease(
+      auth,
+      { email: 'alice@gmail.com', emailVerified: true },
+      { providerId: 'google', accountId: 'google-sub-1' },
+    )
+    storeEmailVerifiedAsText(auth, userId, 'true')
+    // better-auth reads the text back unchanged.
+    expect(
+      (await storedUser(auth, 'alice@gmail.com'))?.user.emailVerified,
+    ).toBe('true')
+
+    const res = await signInWithEmailCode(auth, 'alice@gmail.com')
+
+    expect(hasVerifiedEmail(res.user)).toBe(true)
+    const session = await (
+      await auth.$context
+    ).internalAdapter.findSession(res.token)
+    expect(hasVerifiedEmail(session?.user)).toBe(true)
+  })
+
+  it('still treats a user an earlier release stored as the text "false" as unverified', async () => {
+    const auth = await makeAuth()
+    const { userId } = await seedEarlierRelease(
+      auth,
+      { email: 'alice@example.com', emailVerified: false },
+      { providerId: 'google', accountId: 'google-sub-1' },
+    )
+    storeEmailVerifiedAsText(auth, userId, 'false')
+
+    // better-auth only marks a user verified when the stored value is
+    // falsy, and the text 'false' is not, so an email code leaves it as is:
+    // this is the row docs/configuration.md says to remove by hand.
+    const res = await signInWithEmailCode(auth, 'alice@example.com')
+
+    expect(hasVerifiedEmail(res.user)).toBe(false)
+    expect(
+      (await storedUser(auth, 'alice@example.com'))?.user.emailVerified,
+    ).toBe('false')
   })
 
   it('leaves a verified user’s links and sessions alone on an email-code sign-in', async () => {

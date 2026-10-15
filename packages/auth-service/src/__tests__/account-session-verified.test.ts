@@ -30,7 +30,12 @@ const ctx = {
 
 function makeAuth(user: Record<string, unknown>) {
   return {
-    api: { getSession: vi.fn(() => Promise.resolve({ user })) },
+    api: {
+      getSession: vi.fn(() =>
+        Promise.resolve({ user, session: { token: 'session-token' } }),
+      ),
+      listSessions: vi.fn(() => Promise.resolve([])),
+    },
   }
 }
 
@@ -96,24 +101,37 @@ describe('account settings with an unverified session', () => {
 
   // An earlier release could store Google's claim as the text 'true' or
   // 'false', which better-auth reads back as a string. Both routes must
-  // agree that it is not `true`, or /account and /account/login redirect
-  // to each other forever.
-  describe.each(['true', 'false'])(
-    'with emailVerified stored as the string %j',
-    (stored) => {
-      const user = { email: 'alice@example.com', emailVerified: stored }
+  // agree on it, or /account and /account/login redirect to each other
+  // forever: the text 'true' is verified, the text 'false' is not.
+  describe('with emailVerified stored as the string "true"', () => {
+    const user = { email: 'alice@example.com', emailVerified: 'true' }
 
-      it('GET /account sends it to /account/login', async () => {
-        const res = await get(makeAuth(user), '/account')
-        expect(res.status).toBe(303)
-        expect(res.headers.get('location')).toBe('/account/login')
-        expect(mocks.getDidByEmail).not.toHaveBeenCalled()
-      })
+    it('GET /account renders the settings page', async () => {
+      const res = await get(makeAuth(user), '/account')
+      expect(res.status).toBe(200)
+      expect(mocks.getDidByEmail).toHaveBeenCalled()
+    })
 
-      it('GET /account/login shows the sign-in form instead of looping', async () => {
-        const res = await get(makeAuth(user), '/account/login')
-        expect(res.status).toBe(200)
-      })
-    },
-  )
+    it('GET /account/login forwards it to /account', async () => {
+      const res = await get(makeAuth(user), '/account/login')
+      expect(res.status).toBe(303)
+      expect(res.headers.get('location')).toBe('/account')
+    })
+  })
+
+  describe('with emailVerified stored as the string "false"', () => {
+    const user = { email: 'alice@example.com', emailVerified: 'false' }
+
+    it('GET /account sends it to /account/login', async () => {
+      const res = await get(makeAuth(user), '/account')
+      expect(res.status).toBe(303)
+      expect(res.headers.get('location')).toBe('/account/login')
+      expect(mocks.getDidByEmail).not.toHaveBeenCalled()
+    })
+
+    it('GET /account/login shows the sign-in form instead of looping', async () => {
+      const res = await get(makeAuth(user), '/account/login')
+      expect(res.status).toBe(200)
+    })
+  })
 })

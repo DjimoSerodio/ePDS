@@ -249,10 +249,12 @@ the owner in. Two kinds of row still have to be removed by hand:
   a good link, and better-auth signs a linked identity straight into its
   user without checking the email again, so that identity still signs in
   as the address's owner.
-- **A user whose `emailVerified` is stored as text.** An earlier release
-  could store Google's claim as the text `'true'` or `'false'`. This
-  release treats such a user as unverified, but an email code only marks
-  a user verified when the stored value is false, so the address's owner
+- **A user whose `emailVerified` is stored as the text `'false'`.** An
+  earlier release could store Google's claim as the text `'true'` or
+  `'false'`. The text `'true'` counts as verified, like a boolean `true`,
+  so those users need nothing. The text `'false'` counts as unverified,
+  but an email code only marks a user verified when the stored value is
+  false or 0, and a non-empty text is neither, so the address's owner
   cannot sign in until the row is removed.
 
 Remove all Google and GitHub links, and every user whose email is not
@@ -269,7 +271,7 @@ Back up the database, then, with the `sqlite3` shell, look first
 SELECT u.email, u.emailVerified, a.providerId
   FROM user u LEFT JOIN account a
     ON a.userId = u.id AND a.providerId IN ('google', 'github')
- WHERE a.id IS NOT NULL OR u.emailVerified IS NOT 1;
+ WHERE a.id IS NOT NULL OR u.emailVerified NOT IN (1, 'true');
 ```
 
 and remove them:
@@ -278,12 +280,15 @@ and remove them:
 DELETE FROM session
  WHERE userId IN (SELECT userId FROM account
                    WHERE providerId IN ('google', 'github'))
-    OR userId IN (SELECT id FROM user WHERE emailVerified IS NOT 1);
+    OR userId IN (SELECT id FROM user
+                   WHERE emailVerified NOT IN (1, 'true'));
 DELETE FROM account WHERE providerId IN ('google', 'github');
-DELETE FROM user WHERE emailVerified IS NOT 1;
+DELETE FROM user WHERE emailVerified NOT IN (1, 'true');
 ```
 
-Use `IS NOT 1`, not `= 0`: `= 0` misses the users stored as text.
+Use `NOT IN (1, 'true')`, not `= 0`: `= 0` misses the users stored as
+the text `'false'`, and `IS NOT 1` would also remove the verified users
+stored as the text `'true'`.
 
 ### Email
 
