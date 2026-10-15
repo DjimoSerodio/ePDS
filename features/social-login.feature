@@ -69,6 +69,14 @@ Feature: Social login (Google, GitHub)
     And Google's ID token has the "hd" claim "example.com"
     Then the same PDS account is used (not a new one)
 
+  Scenario: A Google "hd" claim for another domain is not trusted
+    Given "alice@example.com" has a PDS account (created via email OTP)
+    When the user signs in via Google with "alice@example.com"
+    And Google's ID token has the "hd" claim "other.example"
+    Then the browser returns to the login page
+    And the login page asks the user to sign in with an email code instead
+    And no session is created for "alice@example.com"
+
   # --- Errors ---
 
   Scenario: Cancel at Google returns to the login page

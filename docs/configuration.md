@@ -214,10 +214,12 @@ control of the address:
 
 - **Google:** the ID token's `email_verified` must be `true` (a boolean,
   or the exact string `"true"`), and Google must be authoritative for the
-  address: a `@gmail.com` / `@googlemail.com` address, or a Google
-  Workspace account (the token carries an `hd` claim). For any other
-  address Google only checked it once, when the Google account was
-  created, so ePDS treats it as unverified
+  address: a `@gmail.com` / `@googlemail.com` address, or an address in a
+  Google Workspace organisation's hosted domain (the token's `hd` claim
+  equals the address's domain, ignoring case). An address in a Workspace
+  secondary domain, or any `hd` that differs from the address's domain,
+  does not count. For any other address Google only checked it once, when
+  the Google account was created, so ePDS treats it as unverified
   ([Google's guidance](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token)).
 - **GitHub:** the `verified` flag GitHub's `/user/emails` API reports for
   the address used (the profile's public email, otherwise the primary

@@ -11,11 +11,15 @@
  *    send the string "true" — and the string "false" is truthy. Only a
  *    boolean `true` or the exact string "true" counts as verified here.
  * 2. Authority. Google vouches for an address only when it hosts it: a
- *    Gmail address, or an address in a Google Workspace organisation (the
- *    token then carries an `hd` claim). Any other address was verified once,
- *    when the Google account was created, and may have changed hands since.
- *    Google's guidance is to treat such an address as unverified:
+ *    Gmail address, or an address in a Google Workspace organisation whose
+ *    hosted domain the token names in its `hd` claim. Any other address was
+ *    verified once, when the Google account was created, and may have
+ *    changed hands since. Google's guidance is to treat such an address as
+ *    unverified:
  *    https://developers.google.com/identity/gsi/web/guides/verify-google-id-token
+ *    `hd` names a domain, so it vouches only for addresses in that domain:
+ *    an `hd` that differs from the address's domain (a Workspace secondary
+ *    domain, or anything else) does not make Google authoritative for it.
  *
  * The result feeds `mapProfileToUser`, which better-auth spreads over the
  * provider's own user info, so it replaces the raw claim everywhere
@@ -32,21 +36,28 @@ export function isTrueClaim(value: unknown): boolean {
   return value === true || value === 'true'
 }
 
+/** The lower-cased domain of `email`, or null when it has none. */
+function emailDomain(email: unknown): string | null {
+  if (typeof email !== 'string') return null
+  const at = email.lastIndexOf('@')
+  if (at < 0) return null
+  const domain = email
+    .slice(at + 1)
+    .trim()
+    .toLowerCase()
+  return domain === '' ? null : domain
+}
+
 /**
- * Whether Google is authoritative for `email`: a Gmail address, or any
- * address when the token names a Workspace hosted domain (`hd`).
+ * Whether Google is authoritative for `email`: a Gmail address, or an
+ * address whose domain is the Workspace hosted domain the token names
+ * (`hd`), compared case-insensitively.
  */
 export function isGoogleAuthoritativeFor(email: unknown, hd: unknown): boolean {
-  if (typeof hd === 'string' && hd.trim() !== '') return true
-  if (typeof email !== 'string') return false
-  const at = email.lastIndexOf('@')
-  if (at < 0) return false
-  return GMAIL_DOMAINS.has(
-    email
-      .slice(at + 1)
-      .trim()
-      .toLowerCase(),
-  )
+  const domain = emailDomain(email)
+  if (domain === null) return false
+  if (GMAIL_DOMAINS.has(domain)) return true
+  return typeof hd === 'string' && hd.trim().toLowerCase() === domain
 }
 
 /** Whether a Google ID token's claims prove control of its `email`. */

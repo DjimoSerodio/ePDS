@@ -35,8 +35,21 @@ describe('isGoogleAuthoritativeFor', () => {
     ['Alice@GMail.com', undefined, true],
     ['alice@googlemail.com', undefined, true],
     ['alice@example.com', 'example.com', true],
-    // Workspace accounts may use a secondary domain of the organisation.
-    ['alice@example.org', 'example.com', true],
+    // hd and the address's domain are compared case-insensitively.
+    ['alice@Example.COM', 'example.com', true],
+    ['alice@example.com', 'EXAMPLE.com', true],
+    ['ALICE@EXAMPLE.COM', 'Example.Com', true],
+    // hd vouches only for its own domain: a different domain (including a
+    // Workspace secondary domain), a parent or a subdomain does not count.
+    ['alice@example.org', 'example.com', false],
+    ['alice@example.com', 'attacker.example', false],
+    ['alice@mail.example.com', 'example.com', false],
+    ['alice@example.com', 'mail.example.com', false],
+    ['alice@example.com', '*', false],
+    ['alice@example.com', '@example.com', false],
+    // An hd claim does not stop a Gmail address from counting.
+    ['alice@gmail.com', 'example.com', true],
+    ['alice@', 'example.com', false],
     ['alice@example.com', undefined, false],
     ['alice@example.com', '', false],
     ['alice@example.com', '  ', false],
@@ -98,6 +111,26 @@ describe('googleEmailVerified', () => {
         email: 'alice@example.com',
         email_verified: false,
         hd: 'example.com',
+      }),
+    ).toBe(false)
+  })
+
+  it('rejects an address outside the hd domain', () => {
+    expect(
+      googleEmailVerified({
+        email: 'person@example.com',
+        email_verified: true,
+        hd: 'attacker.example',
+      }),
+    ).toBe(false)
+  })
+
+  it('rejects a wildcard hd', () => {
+    expect(
+      googleEmailVerified({
+        email: 'person@example.com',
+        email_verified: true,
+        hd: '*',
       }),
     ).toBe(false)
   })

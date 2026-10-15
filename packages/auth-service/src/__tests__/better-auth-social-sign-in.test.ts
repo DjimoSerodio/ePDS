@@ -77,7 +77,7 @@ describe('Google sign-in emailVerified (real better-auth)', () => {
       undefined,
     ],
     [
-      'a Workspace address (hd present)',
+      'a Workspace address (hd equal to its domain)',
       'alice@example.com',
       true,
       'example.com',
@@ -106,6 +106,21 @@ describe('Google sign-in emailVerified (real better-auth)', () => {
       signInWithGoogle(auth, { email, email_verified: claim }),
     ).rejects.toThrow(EMAIL_NOT_VERIFIED)
     expect(await storedUser(auth, email)).toBeNull()
+  })
+
+  it.each([
+    ['an hd for another domain', 'attacker.example'],
+    ['a wildcard hd', '*'],
+  ])('creates no user for a non-Gmail address with %s', async (_label, hd) => {
+    const auth = await makeAuth()
+    await expect(
+      signInWithGoogle(auth, {
+        email: 'alice@example.com',
+        email_verified: true,
+        hd,
+      }),
+    ).rejects.toThrow(EMAIL_NOT_VERIFIED)
+    expect(await storedUser(auth, 'alice@example.com')).toBeNull()
   })
 
   it('leaves nothing behind for a later email sign-in to adopt', async () => {
