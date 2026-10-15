@@ -23,22 +23,12 @@ import {
   databaseHooks,
   EMAIL_NOT_VERIFIED,
 } from '../better-auth.js'
-
-/** An unsigned JWT carrying `claims`; better-auth's decodeJwt only parses. */
-function idToken(claims: Record<string, unknown>): string {
-  const part = (v: unknown) =>
-    Buffer.from(JSON.stringify(v)).toString('base64url')
-  return `${part({ alg: 'RS256', kid: 'test' })}.${part({
-    iss: 'https://accounts.google.com',
-    aud: 'google-client-id',
-    sub: 'google-sub-1',
-    name: 'Alice',
-    picture: 'https://example.com/a.png',
-    iat: 0,
-    exp: 9999999999,
-    ...claims,
-  })}.sig`
-}
+import {
+  googleCallback,
+  idToken,
+  startGoogleSignIn,
+  stubGoogleToken,
+} from './__helpers__/google-sign-in.js'
 
 async function makeAuth() {
   const google = buildSocialProviders({
@@ -189,86 +179,20 @@ describe('Google redirect flow outcomes (real better-auth)', () => {
     vi.unstubAllGlobals()
   })
 
-  /**
-   * Start a sign-in exactly as the login page's Google button does and
-   * return the state and cookies the callback needs.
-   */
-  async function startSignIn(auth: Auth) {
-    const res = await auth.handler(
-      new Request('https://auth.example/api/auth/sign-in/social', {
-        method: 'POST',
-        headers: {
-          'content-type': 'application/json',
-          origin: 'https://auth.example',
-        },
-        body: JSON.stringify({
-          provider: 'google',
-          callbackURL: '/auth/complete',
-          errorCallbackURL: '/auth/complete',
-        }),
-      }),
-    )
-    expect(res.status).toBe(200)
-    const { url } = (await res.json()) as { url: string }
-    const state = new URL(url).searchParams.get('state') ?? ''
-    const cookie = res.headers
-      .getSetCookie()
-      .map((c) => c.split(';')[0])
-      .join('; ')
-    return { state, cookie }
-  }
-
-  /** Answer Google's token endpoint with an ID token carrying `claims`. */
-  function stubGoogleToken(claims: Record<string, unknown>) {
-    const realFetch = globalThis.fetch.bind(globalThis)
-    vi.stubGlobal(
-      'fetch',
-      vi.fn((input: Parameters<typeof fetch>[0], init?: RequestInit) => {
-        const url =
-          input instanceof URL
-            ? input.href
-            : typeof input === 'string'
-              ? input
-              : input.url
-        if (url.startsWith('https://oauth2.googleapis.com/token')) {
-          return Promise.resolve(
-            Response.json({
-              access_token: 'access-token',
-              id_token: idToken(claims),
-              token_type: 'Bearer',
-              expires_in: 3600,
-            }),
-          )
-        }
-        return realFetch(input, init)
-      }),
-    )
-  }
-
-  async function callback(auth: Auth, query: string, cookie: string) {
-    const res = await auth.handler(
-      new Request(`https://auth.example/api/auth/callback/google?${query}`, {
-        headers: { cookie },
-      }),
-    )
-    expect(res.status).toBe(302)
-    return res.headers.get('location')
-  }
-
   it('sends a cancel at Google to /auth/complete with ?error=', async () => {
     const auth = await makeAuth()
-    const { state, cookie } = await startSignIn(auth)
+    const { state, cookie } = await startGoogleSignIn(auth)
     expect(
-      await callback(auth, `error=access_denied&state=${state}`, cookie),
+      await googleCallback(auth, `error=access_denied&state=${state}`, cookie),
     ).toBe('/auth/complete?error=access_denied')
   })
 
   it('sends an unverified email to /auth/complete with ?error=', async () => {
     const auth = await makeAuth()
-    const { state, cookie } = await startSignIn(auth)
+    const { state, cookie } = await startGoogleSignIn(auth)
     stubGoogleToken({ email: 'alice@example.com', email_verified: true })
 
-    expect(await callback(auth, `code=c&state=${state}`, cookie)).toBe(
+    expect(await googleCallback(auth, `code=c&state=${state}`, cookie)).toBe(
       '/auth/complete?error=email_not_verified',
     )
     expect(await storedUser(auth, 'alice@example.com')).toBeNull()
@@ -276,10 +200,10 @@ describe('Google redirect flow outcomes (real better-auth)', () => {
 
   it('signs a verified Gmail address in and goes to /auth/complete', async () => {
     const auth = await makeAuth()
-    const { state, cookie } = await startSignIn(auth)
+    const { state, cookie } = await startGoogleSignIn(auth)
     stubGoogleToken({ email: 'alice@gmail.com', email_verified: true })
 
-    expect(await callback(auth, `code=c&state=${state}`, cookie)).toBe(
+    expect(await googleCallback(auth, `code=c&state=${state}`, cookie)).toBe(
       '/auth/complete',
     )
     const user = await storedUser(auth, 'alice@gmail.com')

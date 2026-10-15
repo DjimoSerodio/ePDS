@@ -12,7 +12,7 @@
  */
 import type { EpdsDb } from '@certified-app/shared'
 import { createLogger } from '@certified-app/shared'
-import { betterAuth } from 'better-auth'
+import { betterAuth, type BetterAuthOptions } from 'better-auth'
 import { APIError, createAuthMiddleware } from 'better-auth/api'
 import { generateRandomString } from 'better-auth/crypto'
 import { getMigrations } from 'better-auth/db'
@@ -210,9 +210,90 @@ export function refuseUnverifiedUser(user: {
   )
 }
 
+/** The endpoint context better-auth passes to a database hook. */
+type DatabaseHookContext = Parameters<
+  NonNullable<
+    NonNullable<
+      NonNullable<
+        NonNullable<BetterAuthOptions['databaseHooks']>['user']
+      >['update']
+    >['after']
+  >
+>[1]
+
+/**
+ * Endpoint contexts in which a user update is marking the email verified,
+ * from that update's `before` hook to its `after` hook (better-auth passes
+ * both the same context object).
+ */
+const verifyingEmail = new WeakSet()
+
+/**
+ * better-auth `databaseHooks.user.update.before`: note an update that marks
+ * the user's email verified, for {@link dropLinksMadeBeforeVerification}.
+ *
+ * In better-auth 1.4.18 only a user who is not verified gets such an
+ * update: an email-code sign-in (or email-otp's verify-email) for the
+ * address, or a social sign-in that proves it and links to the user.
+ * (`overrideUserInfoOnSignIn`, which ePDS does not set, would also write it
+ * for verified users.)
+ */
+export function noteEmailVerification(
+  update: { emailVerified?: unknown },
+  context: DatabaseHookContext,
+): Promise<void> {
+  if (context && hasVerifiedEmail(update)) verifyingEmail.add(context)
+  return Promise.resolve()
+}
+
+/**
+ * better-auth `databaseHooks.user.update.after`: when a user's email has
+ * just been verified, remove the social identities linked to the user and
+ * sign out its sessions.
+ *
+ * They were all made while nobody had proved the address: the user-creation
+ * guard means only a user row left by an earlier release can be unverified,
+ * and its social links and sessions came from sign-ins whose provider did
+ * not vouch for the email. better-auth signs a linked identity straight in
+ * without looking at the email again, so without this, the first email-code
+ * sign-in by the address's real owner would hand their account to whoever
+ * controls that identity, and an old session of it would start counting as
+ * signed in. The sign-in that verified the address continues as normal;
+ * its own session is created after this runs. An identity the provider
+ * does vouch for (a Gmail or Workspace address) links again by itself on its
+ * next sign-in, so the one a social sign-in has just linked is dropped too.
+ */
+export async function dropLinksMadeBeforeVerification(
+  user: { id?: unknown },
+  context: DatabaseHookContext,
+): Promise<void> {
+  if (!context || !verifyingEmail.delete(context)) return
+  if (typeof user.id !== 'string') return
+  const adapter = context.context.internalAdapter
+  const accounts = await adapter.findAccounts(user.id)
+  // Every account row other than a password ('credential') is a social
+  // identity. ePDS has no passwords, but leave them alone if one exists.
+  const social = accounts.filter((a) => a.providerId !== 'credential')
+  for (const account of social) await adapter.deleteAccount(account.id)
+  await adapter.deleteSessions(user.id)
+  logger.info(
+    {
+      userId: user.id,
+      removedLinks: social.map((a) => a.providerId),
+    },
+    'Email newly verified: removed the social links and sessions made before',
+  )
+}
+
 /** The `databaseHooks` ePDS passes to better-auth. */
 export const databaseHooks = {
-  user: { create: { before: refuseUnverifiedUser } },
+  user: {
+    create: { before: refuseUnverifiedUser },
+    update: {
+      before: noteEmailVerification,
+      after: dropLinksMadeBeforeVerification,
+    },
+  },
 }
 
 /**
