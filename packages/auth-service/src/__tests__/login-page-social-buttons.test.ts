@@ -23,12 +23,16 @@ vi.mock('../better-auth.js', () => ({
 
 const { renderLoginPage } = await import('../routes/login-page.js')
 
-function render(): string {
+function render(
+  branding: Record<string, unknown> = {
+    epds_social_providers: ['google', 'github'],
+  },
+): string {
   return renderLoginPage({
     flowId: 'flow-1',
     clientId: 'https://example.com/client-metadata.json',
     clientName: 'Example',
-    branding: {},
+    branding,
     customCss: null,
     customFaviconUrl: null,
     customFaviconUrlDark: null,
@@ -235,5 +239,28 @@ describe('renderLoginPage social sign-in buttons', () => {
     for (const fn of windowListeners.pageshow ?? []) fn({ persisted: true })
 
     expect(buttons.google.disabled).toBe(false)
+  })
+})
+
+describe('renderLoginPage social sign-in opt-in', () => {
+  it('renders no social buttons when the client does not ask for any', () => {
+    const html = render({})
+    expect(html).not.toContain('data-social-provider="')
+    expect(html).not.toContain('or continue with')
+  })
+
+  it('renders only the providers the client lists', () => {
+    const html = render({ epds_social_providers: ['google'] })
+    expect(html).toContain('data-social-provider="google"')
+    expect(html).not.toContain('data-social-provider="github"')
+  })
+
+  it('ignores unknown providers and a non-array value', () => {
+    expect(render({ epds_social_providers: ['facebook'] })).not.toContain(
+      'data-social-provider="',
+    )
+    expect(render({ epds_social_providers: 'google' })).not.toContain(
+      'data-social-provider="',
+    )
   })
 })

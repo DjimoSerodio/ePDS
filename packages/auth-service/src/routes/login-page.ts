@@ -557,8 +557,18 @@ export function renderLoginPage(opts: {
       )}" class="terms-link" target="_blank" rel="noopener noreferrer">Privacy Policy</a>.</div>`
     : ''
 
-  const hasGoogle = 'google' in socialProviders
-  const hasGithub = 'github' in socialProviders
+  // Social buttons are opt-in per client: a provider's button renders only
+  // when the operator configured it AND the client lists it in
+  // `epds_social_providers`, the same way `epds_handle_login_url` gates the
+  // ATProto/Bluesky button. Configuring Google on a shared PDS therefore
+  // leaves the login page of every other client unchanged.
+  const requestedSocial = Array.isArray(b.epds_social_providers)
+    ? b.epds_social_providers
+    : []
+  const hasGoogle =
+    'google' in socialProviders && requestedSocial.includes('google')
+  const hasGithub =
+    'github' in socialProviders && requestedSocial.includes('github')
   const hasSocialProviders = hasGoogle || hasGithub
 
   // The flash region is a single element shared by both steps, so there
