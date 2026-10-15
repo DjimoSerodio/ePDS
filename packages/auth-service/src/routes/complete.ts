@@ -15,6 +15,9 @@
  *       the social buttons' errorCallbackURL) → back to the login page for
  *       this flow with a fixed message (lib/social-sign-in-error.ts)
  *   3. Get better-auth session → extract verified email
+ *   3b. Session email not verified (a social sign-in whose provider did not
+ *       vouch for it) → back to the login page; it neither creates an
+ *       account nor signs into the one that owns the address
  *   4. Check if this is a new user (no PDS account for email)
  *   5a. New user, handle_mode='random' → HMAC-signed redirect to pds-core (random handle generated server-side)
  *   5b. New user, handle_mode=null|'picker'|'picker-with-random' → redirect to /auth/choose-handle
@@ -41,6 +44,7 @@ import {
   loginPageUrlWithError,
   socialSignInErrorCode,
 } from '../lib/social-sign-in-error.js'
+import { hasVerifiedEmail } from '../lib/verified-email.js'
 
 const logger = createLogger('auth:complete')
 
@@ -286,7 +290,21 @@ export function createCompleteRouter(
     // actually authenticated with. better-auth sets emailVerified when
     // the emailed one-time code is verified, so it is the authoritative
     // answer for `sessionEmail`.
-    const sessionEmailVerified: boolean = session.user.emailVerified === true
+    const sessionEmailVerified = hasVerifiedEmail(session.user)
+
+    // Step 3b: the email is the only key from a sign-in to a PDS account,
+    // so an address nobody proved control of must not create an account or
+    // sign into the one that has it. Email OTP sessions are always
+    // verified, and better-auth.ts refuses to create unverified users, so
+    // this only catches a user row left from before that guard existed.
+    if (!sessionEmailVerified) {
+      logger.warn(
+        { email: sessionEmail, flowId },
+        'Refusing /auth/complete: session email is not verified',
+      )
+      res.redirect(303, loginPageUrlWithError(flow, 'email_unverified'))
+      return
+    }
 
     // Step 4: Check whether this is a new user (no PDS account for email).
     const { email, did, viaRecovery } = await resolveCompleteIdentity(
@@ -297,11 +315,12 @@ export function createCompleteRouter(
       internalSecret,
     )
 
-    // Recovery rebinds `email` from the proved backup address to the
-    // account's primary. The user proved control of the backup, not the
-    // primary, so recovering access is not evidence about the address
-    // being signed here — withhold the claim.
-    const emailVerified = sessionEmailVerified && !viaRecovery
+    // The session's own address is verified (Step 3b). Recovery rebinds
+    // `email` from the proved backup address to the account's primary.
+    // The user proved control of the backup, not the primary, so
+    // recovering access is not evidence about the address being signed
+    // here — withhold the claim.
+    const emailVerified = !viaRecovery
 
     const isNewAccount = !did
 

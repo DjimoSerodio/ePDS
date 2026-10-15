@@ -23,6 +23,7 @@ import type { EmailSender } from './email/sender.js'
 import { getDidByEmail } from './lib/get-did-by-email.js'
 import { mapGoogleProfileToUser } from './lib/google-email-verified.js'
 import { ensurePdsUrl } from './lib/pds-url.js'
+import { hasVerifiedEmail } from './lib/verified-email.js'
 
 export type BetterAuthInstance = ReturnType<typeof createBetterAuth>
 
@@ -182,6 +183,39 @@ export function buildSocialProviders(
 export let socialProviders: SocialProvidersConfig = {}
 
 /**
+ * The message better-auth reports when {@link refuseUnverifiedUser} refuses
+ * a user. Its OAuth callback turns it into `?error=email_not_verified` on
+ * the errorCallbackURL; its ID-token sign-in returns it as a 401.
+ */
+export const EMAIL_NOT_VERIFIED = 'email not verified'
+
+/**
+ * better-auth `databaseHooks.user.create.before`: never create a user whose
+ * email address is not verified.
+ *
+ * Email OTP always creates verified users (the code proves the address), so
+ * in practice this refuses social sign-ins whose provider does not vouch
+ * for the email. Such a sign-in must not leave a user behind: an email-OTP
+ * sign-in for that address later marks the existing user verified
+ * (better-auth 1.4.18 email-otp), while the social identity stays linked to
+ * it, so whoever controls the social account would from then on sign in as
+ * the person who proved the address by email.
+ */
+export function refuseUnverifiedUser(user: {
+  emailVerified?: unknown
+}): Promise<void> {
+  if (hasVerifiedEmail(user)) return Promise.resolve()
+  return Promise.reject(
+    new APIError('FORBIDDEN', { message: EMAIL_NOT_VERIFIED }),
+  )
+}
+
+/** The `databaseHooks` ePDS passes to better-auth. */
+export const databaseHooks = {
+  user: { create: { before: refuseUnverifiedUser } },
+}
+
+/**
  * Create a better-auth instance wired to the given EmailSender and EpdsDb.
  *
  * Called once during app startup from index.ts.
@@ -310,6 +344,8 @@ export function createBetterAuth(
       expiresIn: sessionExpiresIn,
       updateAge: sessionUpdateAge,
     },
+
+    databaseHooks,
 
     socialProviders,
 

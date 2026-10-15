@@ -39,6 +39,8 @@ const MESSAGES: Record<SocialSignInErrorCode, string> = {
  * - `access_denied`: the user cancelled at Google / GitHub.
  * - `account_not_linked`: the email belongs to an existing user and the
  *   provider did not prove control of it (see lib/google-email-verified.ts).
+ * - `email_not_verified`: the user-creation guard in better-auth.ts
+ *   (refuseUnverifiedUser) refused an email the provider did not prove.
  * - `email_not_found`: the provider returned no email address.
  */
 export function socialSignInErrorCode(
@@ -48,6 +50,7 @@ export function socialSignInErrorCode(
     case 'access_denied':
       return 'cancelled'
     case 'account_not_linked':
+    case 'email_not_verified':
       return 'email_unverified'
     case 'email_not_found':
       return 'no_email'

@@ -61,8 +61,12 @@ function makeCtx(handleMode: HandleMode | null): AuthServiceContext {
 function makeAuth() {
   return {
     api: {
+      // As left by an email-OTP sign-in, which always verifies the
+      // address; unverified sessions are refused before these steps.
       getSession: vi.fn(() =>
-        Promise.resolve({ user: { email: 'Alice@example.com' } }),
+        Promise.resolve({
+          user: { email: 'Alice@example.com', emailVerified: true },
+        }),
       ),
     },
   }
