@@ -9,7 +9,8 @@
  * with an ID token for those claims (packages/auth-service/src/lib/
  * test-google-token.ts). Everything between the two runs as in production.
  *
- * Only runs where testEnv.fakeGoogle is set (tag @fake-google).
+ * Only runs where testEnv.fakeGoogle is set (tag @fake-google); the Google
+ * steps return 'pending' otherwise, for runs by --name that bypass tags.
  */
 
 import { randomBytes } from 'node:crypto'
@@ -70,7 +71,6 @@ async function signInWithGoogle(
   world: EpdsWorld,
   outcome: { claims: Record<string, unknown> } | 'cancel',
 ): Promise<void> {
-  if (!testEnv.fakeGoogle) return
   const page = getPage(world)
   await fakeGoogle(page, outcome)
   await page.goto(`${demoBaseUrl}/flow2`)
@@ -87,11 +87,19 @@ async function welcomeDid(page: Page): Promise<string> {
   return did[0]
 }
 
-/** Sign in with an emailed code from the auth service's login page. */
-async function signInWithEmailCode(page: Page, email: string): Promise<void> {
+/**
+ * Sign in with an emailed code, entering the address in the email form on
+ * the current page: the auth service's login page, or the demo's own form,
+ * which hands the address to it.
+ */
+async function signInWithEmailCode(
+  page: Page,
+  email: string,
+  submit = '#form-send-otp button[type=submit]',
+): Promise<void> {
   await clearMailpit(email)
   await page.fill('#email', email)
-  await page.click('#form-send-otp button[type=submit]')
+  await page.click(submit)
   await expect(page.locator('#step-otp.active')).toBeVisible({
     timeout: 30_000,
   })
@@ -121,7 +129,7 @@ Given(
 When(
   'a new user signs in with Google using a Gmail address',
   async function (this: EpdsWorld) {
-    if (!testEnv.mailpitPass) return 'pending'
+    if (!testEnv.fakeGoogle || !testEnv.mailpitPass) return 'pending'
     this.testEmail = `${uniqueId('google')}@gmail.com`
     this.googleClaims = verifiedGoogleAccount(this.testEmail)
     await signInWithGoogle(this, { claims: this.googleClaims })
@@ -129,6 +137,7 @@ When(
 )
 
 When('the user signs in with Google', async function (this: EpdsWorld) {
+  if (!testEnv.fakeGoogle) return 'pending'
   if (!this.googleClaims) throw new Error('No Google identity set up')
   await signInWithGoogle(this, { claims: this.googleClaims })
 })
@@ -136,6 +145,7 @@ When('the user signs in with Google', async function (this: EpdsWorld) {
 When(
   'the user signs in with Google but cancels at Google',
   async function (this: EpdsWorld) {
+    if (!testEnv.fakeGoogle) return 'pending'
     await signInWithGoogle(this, 'cancel')
   },
 )
@@ -157,14 +167,7 @@ When(
     await resetBrowserContext(this, sharedBrowser)
     const page = getPage(this)
     await page.goto(testEnv.demoUrl)
-    await clearMailpit(testEmail(this))
-    await page.fill('#email', testEmail(this))
-    await page.click('button[type=submit]')
-    await expect(page.locator('#step-otp.active')).toBeVisible({
-      timeout: 30_000,
-    })
-    const message = await waitForEmail(`to:${testEmail(this)}`)
-    await fillOtp(page, await extractOtp(message.ID))
+    await signInWithEmailCode(page, testEmail(this), 'button[type=submit]')
   },
 )
 
