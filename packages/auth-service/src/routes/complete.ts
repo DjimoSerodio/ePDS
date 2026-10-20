@@ -295,8 +295,8 @@ export function createCompleteRouter(
     // Step 3b: the email is the only key from a sign-in to a PDS account,
     // so an address nobody proved control of must not create an account or
     // sign into the one that has it. Email OTP sessions are always
-    // verified, and better-auth.ts refuses to create unverified users, so
-    // this only catches a user row left from before that guard existed.
+    // verified, and better-auth.ts refuses to create unverified users;
+    // this keeps the route safe on its own if either ever changes.
     if (!sessionEmailVerified) {
       logger.warn(
         { email: sessionEmail, flowId },

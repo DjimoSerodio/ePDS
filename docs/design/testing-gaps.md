@@ -126,8 +126,8 @@ this area's main gap: `login-page.ts`, `consent.ts`, `recovery.ts`, `account-log
   `index.ts` does, on in-memory SQLite (`DB_LOCATION=':memory:'`), with
   Google's token endpoint stubbed, `getDidByEmail` mocked and email codes
   captured from a stub `EmailSender`. It drives both the Google redirect
-  flow and a real email-code sign-in, so dropping a hook or the Google
-  claim mapper from the production instance fails it.
+  flow and a real email-code sign-in, so dropping the user-creation guard
+  or the Google claim mapper from the production instance fails it.
 
 **Recommended strategy:**
 

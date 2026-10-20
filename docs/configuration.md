@@ -233,63 +233,6 @@ ePDS honours: the user is returned to the login page with a message asking
 them to sign in with an email code instead. A cancel at the provider also
 returns to the login page.
 
-#### If Google or GitHub was configured before this release
-
-Social sign-ins made under the earlier, looser rules left rows in the
-better-auth tables of the auth service's database (`DB_LOCATION`). Most of
-them can no longer be used: an unverified user cannot sign in, and when
-the address's owner proves the address (with an email code, or a Google
-sign-in Google is authoritative for), this release removes the social
-identities linked to that user and signs out its sessions before signing
-the owner in. Two kinds of row still have to be removed by hand:
-
-- **A social identity linked to a verified user.** An earlier release
-  linked, for example, a Google identity on a non-Gmail address to the
-  existing user with that address. This release cannot tell it apart from
-  a good link, and better-auth signs a linked identity straight into its
-  user without checking the email again, so that identity still signs in
-  as the address's owner.
-- **A user whose `emailVerified` is stored as the text `'false'`.** An
-  earlier release could store Google's claim as the text `'true'` or
-  `'false'`. The text `'true'` counts as verified, like a boolean `true`,
-  so those users need nothing. The text `'false'` counts as unverified,
-  but an email code only marks a user verified when the stored value is
-  false or 0, and a non-empty text is neither, so the address's owner
-  cannot sign in until the row is removed.
-
-Remove all Google and GitHub links, and every user whose email is not
-verified, once after upgrading. This is safe: PDS accounts are not
-touched (ePDS finds them by email address), people who signed in with an
-email code keep their user, and Gmail and Workspace identities (and
-GitHub ones with a verified address) link again by themselves on their
-next sign-in. The affected people are signed out.
-
-Back up the database, then, with the `sqlite3` shell, look first
-(read-only):
-
-```sql
-SELECT u.email, u.emailVerified, a.providerId
-  FROM user u LEFT JOIN account a
-    ON a.userId = u.id AND a.providerId IN ('google', 'github')
- WHERE a.id IS NOT NULL OR u.emailVerified NOT IN (1, 'true');
-```
-
-and remove them:
-
-```sql
-DELETE FROM session
- WHERE userId IN (SELECT userId FROM account
-                   WHERE providerId IN ('google', 'github'))
-    OR userId IN (SELECT id FROM user
-                   WHERE emailVerified NOT IN (1, 'true'));
-DELETE FROM account WHERE providerId IN ('google', 'github');
-DELETE FROM user WHERE emailVerified NOT IN (1, 'true');
-```
-
-Use `NOT IN (1, 'true')`, not `= 0`: `= 0` misses the users stored as
-the text `'false'`, and `IS NOT 1` would also remove the verified users
-stored as the text `'true'`.
-
 ### Email
 
 | Variable                         | Description                                                                                                                                                                                                            |
