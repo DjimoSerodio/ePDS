@@ -190,7 +190,6 @@ hostname, e.g. one for each environment):
 | Provider | Redirect / callback URI                            |
 | -------- | -------------------------------------------------- |
 | Google   | `https://<AUTH_HOSTNAME>/api/auth/callback/google` |
-| GitHub   | `https://<AUTH_HOSTNAME>/api/auth/callback/github` |
 
 #### Google setup
 
@@ -221,12 +220,6 @@ control of the address:
   does not count. For any other address Google only checked it once, when
   the Google account was created, so ePDS treats it as unverified
   ([Google's guidance](https://developers.google.com/identity/gsi/web/guides/verify-google-id-token)).
-- **GitHub:** the `verified` flag GitHub's `/user/emails` API reports for
-  the address used (the profile's public email, otherwise the primary
-  one). GitHub does not host email addresses, so that flag can be stale:
-  an address that has changed hands stays verified on the GitHub account
-  that confirmed it years ago. Enable GitHub only if that risk is
-  acceptable for your instance.
 
 An unverified address never creates a user, a PDS account, or a session
 ePDS honours: the user is returned to the login page with a message asking
