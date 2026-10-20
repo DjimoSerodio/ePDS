@@ -16,7 +16,7 @@ pds-core callback, full OAuth flow).
 | `auth-service/middleware/`    | ~91%     | `rate-limit.ts` timer cleanup at 82%                                   |
 | `auth-service/email/`         | ~71%     | Template conditional branches partially covered                        |
 | `auth-service/routes/`        | ~35%     | Resend webhook is HTTP-tested; browser/OAuth routes remain gaps        |
-| `auth-service/better-auth.ts` | ~76%     | better-auth wiring — see below                                         |
+| `auth-service/better-auth.ts` | ~73%     | better-auth wiring — see below                                         |
 | `auth-service/context.ts`     | 0%       | Minimal glue class                                                     |
 | `auth-service/index.ts`       | 0%       | Express app assembly + `main()`                                        |
 | `demo/lib/auth.ts`            | ~51%     | Network-dependent resolution functions                                 |
@@ -100,7 +100,7 @@ this area's main gap: `login-page.ts`, `consent.ts`, `recovery.ts`, `account-log
 - Alternatively, cover them via e2e tests (Playwright or similar) that
   exercise the full stack.
 
-### 3. `auth-service/src/better-auth.ts` (~76%)
+### 3. `auth-service/src/better-auth.ts` (~73%)
 
 **Why it's hard:**
 
