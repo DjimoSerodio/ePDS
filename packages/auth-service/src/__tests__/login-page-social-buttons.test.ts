@@ -6,11 +6,8 @@
  * render sent a GET and got a 404: the Google and GitHub buttons could never
  * start a sign-in.
  *
- * The behavioural tests run the page's real inline script in a `node:vm`
- * context against a minimal stand-in DOM (see __helpers__/login-page-script),
- * then click a button: there is no DOM test environment in this repo, and
- * asserting on the script's source text alone would not show that the
- * handler is wired up.
+ * The behavioural tests run the page's real inline script (see
+ * __helpers__/login-page-script) and click a button.
  */
 import { describe, it, expect, vi } from 'vitest'
 import { jsonResponse, runPageScript } from './__helpers__/login-page-script.js'
