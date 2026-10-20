@@ -10,7 +10,11 @@
  * __helpers__/login-page-script) and click a button.
  */
 import { describe, it, expect, vi } from 'vitest'
-import { jsonResponse, runPageScript } from './__helpers__/login-page-script.js'
+import {
+  jsonResponse,
+  LOGIN_PAGE_OPTIONS,
+  runPageScript,
+} from './__helpers__/login-page-script.js'
 
 vi.mock('../better-auth.js', () => ({
   socialProviders: {
@@ -24,25 +28,7 @@ const { renderLoginPage } = await import('../routes/login-page.js')
 function render(
   overrides: Partial<Parameters<typeof renderLoginPage>[0]> = {},
 ): string {
-  return renderLoginPage({
-    flowId: 'flow-1',
-    clientId: 'https://example.com/client-metadata.json',
-    clientName: 'Example',
-    branding: { epds_social_providers: ['google', 'github'] },
-    customCss: null,
-    customFaviconUrl: null,
-    customFaviconUrlDark: null,
-    loginHint: '',
-    initialStep: 'email',
-    otpAlreadySent: false,
-    csrfToken: 'csrf',
-    authBasePath: '/api/auth',
-    pdsPublicUrl: 'https://pds.example.com',
-    otpLength: 6,
-    otpCharset: 'numeric',
-    heartbeatEnabled: false,
-    ...overrides,
-  })
+  return renderLoginPage({ ...LOGIN_PAGE_OPTIONS, ...overrides })
 }
 
 /** Run the page script of `html` (by default the plain login page). */

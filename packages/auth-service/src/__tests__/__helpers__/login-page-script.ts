@@ -10,6 +10,32 @@
  */
 import * as vm from 'node:vm'
 import { vi, type Mock } from 'vitest'
+import type { renderLoginPage } from '../../routes/login-page.js'
+
+export type LoginPageOptions = Parameters<typeof renderLoginPage>[0]
+
+/**
+ * renderLoginPage options for a plain email-step page with both social
+ * buttons requested; tests override what they need.
+ */
+export const LOGIN_PAGE_OPTIONS: LoginPageOptions = {
+  flowId: 'flow-1',
+  clientId: 'https://app.example.com/client-metadata.json',
+  clientName: 'Example',
+  branding: { epds_social_providers: ['google', 'github'] },
+  customCss: null,
+  customFaviconUrl: null,
+  customFaviconUrlDark: null,
+  loginHint: '',
+  initialStep: 'email',
+  otpAlreadySent: false,
+  csrfToken: 'csrf',
+  authBasePath: '/api/auth',
+  pdsPublicUrl: 'https://pds.example.com',
+  otpLength: 6,
+  otpCharset: 'numeric',
+  heartbeatEnabled: false,
+}
 
 /** The page's main inline script (the one that owns the login flow). */
 export function mainScript(html: string): string {

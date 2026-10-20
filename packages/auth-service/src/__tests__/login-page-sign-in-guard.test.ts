@@ -12,6 +12,7 @@
 import { describe, it, expect, vi } from 'vitest'
 import {
   jsonResponse,
+  LOGIN_PAGE_OPTIONS,
   runPageScript,
   type PageScriptHandles,
 } from './__helpers__/login-page-script.js'
@@ -61,25 +62,11 @@ const ok: Record<string, Answer> = {
 function runPage(overrides: Record<string, Answer> = {}) {
   const answers = { ...ok, ...overrides }
   const html = renderLoginPage({
-    flowId: 'flow-1',
-    clientId: 'https://app.example.com/client-metadata.json',
-    clientName: 'Example',
+    ...LOGIN_PAGE_OPTIONS,
     branding: {
       epds_social_providers: ['google', 'github'],
       epds_handle_login_url: HANDLE_LOGIN_URL,
     },
-    customCss: null,
-    customFaviconUrl: null,
-    customFaviconUrlDark: null,
-    loginHint: '',
-    initialStep: 'email',
-    otpAlreadySent: false,
-    csrfToken: 'csrf',
-    authBasePath: '/api/auth',
-    pdsPublicUrl: 'https://pds.example.com',
-    otpLength: 6,
-    otpCharset: 'numeric',
-    heartbeatEnabled: false,
   })
   return runPageScript(html, (url) => {
     const answer = answers[url] as Answer | undefined
