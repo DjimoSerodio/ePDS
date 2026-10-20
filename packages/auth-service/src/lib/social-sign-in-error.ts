@@ -1,5 +1,5 @@
 /**
- * Errors from a social (Google / GitHub) sign-in, carried back to the
+ * Errors from a social (e.g. Google) sign-in, carried back to the
  * login page.
  *
  * The login page's social buttons pass `errorCallbackURL: '/auth/complete'`
@@ -36,7 +36,7 @@ const MESSAGES: Record<SocialSignInErrorCode, string> = {
  * Reduce an error code from better-auth's OAuth callback (or the provider,
  * which better-auth passes through) to a {@link SocialSignInErrorCode}.
  *
- * - `access_denied`: the user cancelled at Google / GitHub.
+ * - `access_denied`: the user cancelled at the provider.
  * - `account_not_linked`: the email belongs to an existing user and the
  *   provider did not prove control of it (see lib/google-email-verified.ts).
  * - `email_not_verified`: the user-creation guard in better-auth.ts

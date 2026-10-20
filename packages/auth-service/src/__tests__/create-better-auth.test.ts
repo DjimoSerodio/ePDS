@@ -40,8 +40,6 @@ beforeEach(() => {
   vi.stubEnv('AUTH_SESSION_SECRET', 'test-secret-test-secret-test-secret')
   vi.stubEnv('GOOGLE_CLIENT_ID', 'google-client-id')
   vi.stubEnv('GOOGLE_CLIENT_SECRET', 'google-client-secret')
-  vi.stubEnv('GITHUB_CLIENT_ID', '')
-  vi.stubEnv('GITHUB_CLIENT_SECRET', '')
 })
 
 afterEach(() => {
