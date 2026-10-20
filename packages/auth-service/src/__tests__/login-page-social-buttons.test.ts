@@ -6,13 +6,11 @@
  * render sent a GET and got a 404: the Google and GitHub buttons could never
  * start a sign-in.
  *
- * The behavioural tests run the page's real inline script in a `node:vm`
- * context against a minimal stand-in DOM, then click a button: there is no
- * DOM test environment in this repo, and asserting on the script's source
- * text alone would not show that the handler is wired up.
+ * The behavioural tests run the page's real inline script (see
+ * __helpers__/login-page-script) and click a button.
  */
-import * as vm from 'node:vm'
 import { describe, it, expect, vi } from 'vitest'
+import { jsonResponse, runPageScript } from './__helpers__/login-page-script.js'
 
 vi.mock('../better-auth.js', () => ({
   socialProviders: {
@@ -48,118 +46,9 @@ function render(
   })
 }
 
-/** The page's main inline script (the one that owns the login flow). */
-function mainScript(html: string): string {
-  const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
-    (m) => m[1],
-  )
-  const main = scripts.find((s) => s.includes('var authBasePath'))
-  if (!main) throw new Error('login page main script not found')
-  return main
-}
-
-/**
- * A value that absorbs any property read, call or construction by returning
- * itself, so page-script initialisation that does not concern the social
- * buttons (OTP boxes, typo guard, heartbeat) runs without a real DOM.
- */
-function absorbing(): unknown {
-  const target = function () {}
-  const proxy: unknown = new Proxy(target, {
-    get: (_t, key) => {
-      if (key === Symbol.toPrimitive) return () => ''
-      if (key === 'length') return 0
-      return proxy
-    },
-    set: () => true,
-    apply: () => proxy,
-    construct: () => proxy as object,
-  })
-  return proxy
-}
-
-interface FakeButton {
-  disabled: boolean
-  getAttribute: (name: string) => string | null
-  addEventListener: (type: string, fn: () => unknown) => void
-  click: () => unknown
-}
-
-function fakeButton(provider: string): FakeButton {
-  let onClick: (() => unknown) | undefined
-  return {
-    disabled: false,
-    getAttribute: (name) => (name === 'data-social-provider' ? provider : null),
-    addEventListener: (type, fn) => {
-      if (type === 'click') onClick = fn
-    },
-    click: () => onClick?.(),
-  }
-}
-
-/**
- * Run the page script with fake Google/GitHub buttons and a stubbed
- * `fetch`, and return the handles a test needs to drive and observe it.
- */
+/** Run the page script of the default render with a stubbed `fetch`. */
 function runPage(fetchImpl: (url: string, init: RequestInit) => unknown) {
-  const buttons = { google: fakeButton('google'), github: fakeButton('github') }
-  const assign = vi.fn()
-  const fetchSpy = vi.fn(fetchImpl)
-  const windowListeners: Partial<Record<string, ((e: unknown) => void)[]>> = {}
-  // The shared flash region: records the text of the last message shown.
-  const flash = { text: '' }
-  const errorEl = {
-    classList: { add: () => undefined, remove: () => undefined },
-    replaceChildren: (frag?: { children: { textContent: string }[] }) => {
-      flash.text = frag ? frag.children.map((c) => c.textContent).join('') : ''
-    },
-  }
-  const fakeDocument: Record<string, unknown> = {
-    querySelectorAll: (selector: string) =>
-      selector === '[data-social-provider]'
-        ? [buttons.google, buttons.github]
-        : [],
-    getElementById: (id: string) =>
-      id === 'error-msg' ? errorEl : absorbing(),
-    createDocumentFragment: () => {
-      const children: unknown[] = []
-      return { children, appendChild: (n: unknown) => children.push(n) }
-    },
-    createElement: () => ({ textContent: '' }),
-  }
-  const document = new Proxy(absorbing() as object, {
-    get: (target, key) =>
-      typeof key === 'string' && key in fakeDocument
-        ? fakeDocument[key]
-        : (target as Record<PropertyKey, unknown>)[key],
-  })
-  const window = {
-    location: { assign, href: '', search: '' },
-    addEventListener: (type: string, fn: (e: unknown) => void) => {
-      ;(windowListeners[type] ??= []).push(fn)
-    },
-  }
-  vm.runInNewContext(mainScript(render()), {
-    document,
-    window,
-    fetch: fetchSpy,
-    setInterval: () => 0,
-    clearInterval: () => undefined,
-    setTimeout: () => 0,
-    clearTimeout: () => undefined,
-    navigator: absorbing(),
-    URL,
-    console,
-  })
-  return { buttons, assign, fetchSpy, windowListeners, flash }
-}
-
-function jsonResponse(status: number, body: unknown) {
-  return Promise.resolve({
-    ok: status >= 200 && status < 300,
-    status,
-    json: () => Promise.resolve(body),
-  })
+  return runPageScript(render(), fetchImpl)
 }
 
 /** Authorization URLs of the shape better-auth returns for each provider. */

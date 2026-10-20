@@ -783,7 +783,6 @@ export function renderLoginPage(opts: {
       var requestUri = ${JSON.stringify('')};  // not needed client-side; flow_id is in cookie
       var currentEmail = '';
       var loginMode = 'email'; // 'email' | 'handle'
-      var verifying = false;
       var errorEl = document.getElementById('error-msg');
       var stepEmail = document.getElementById('step-email');
       var stepOtp = document.getElementById('step-otp');
@@ -1240,14 +1239,35 @@ export function renderLoginPage(opts: {
         });
       }
 
-      // better-auth's /sign-in/social is POST-only (a GET is a 404), so
-      // the social buttons POST it and follow the provider URL it returns.
-      // The button stays disabled while the request is in flight: a second
-      // POST would replace the first one's OAuth state, and the provider
-      // round trip started by the first click would then fail.
+      // One sign-in attempt at a time, whatever the method: a social
+      // button, sending or verifying an email code, a resend, or a handle
+      // hand-off. Two in flight race each other (a second /sign-in/social
+      // replaces the first one's OAuth state; a verify can land while the
+      // page is already leaving for a provider). Every handler claims the
+      // guard before it starts a request, releases it when the attempt
+      // fails and the page stays usable, and keeps it while the page is
+      // navigating away. Sending a code releases it once the code is sent,
+      // so the verify that follows can claim it.
       var socialButtons = Array.prototype.slice.call(
         document.querySelectorAll('[data-social-provider]'),
       );
+      var signInBusy = false;
+      function setSocialButtonsDisabled(disabled) {
+        socialButtons.forEach(function(btn) { btn.disabled = disabled; });
+      }
+      function claimSignIn() {
+        if (signInBusy) return false;
+        signInBusy = true;
+        setSocialButtonsDisabled(true);
+        return true;
+      }
+      function releaseSignIn() {
+        signInBusy = false;
+        setSocialButtonsDisabled(false);
+      }
+
+      // better-auth's /sign-in/social is POST-only (a GET is a 404), so
+      // the social buttons POST it and follow the provider URL it returns.
       // Only ever leave this page for the provider's own authorization
       // server: an https URL on the host better-auth sends that provider
       // to. Anything else in the response is treated as a failed start.
@@ -1275,17 +1295,14 @@ export function renderLoginPage(opts: {
         }
       }
       // A page restored from the back/forward cache keeps its script
-      // state, so a button disabled on the way out to the provider would
-      // otherwise still be disabled when the user comes back.
+      // state, so the guard held on the way out would otherwise still
+      // block every sign-in when the user comes back.
       window.addEventListener('pageshow', function(e) {
-        if (e.persisted) {
-          socialButtons.forEach(function(btn) { btn.disabled = false; });
-        }
+        if (e.persisted) releaseSignIn();
       });
       socialButtons.forEach(function(btn) {
         btn.addEventListener('click', async function() {
-          if (btn.disabled) return;
-          btn.disabled = true;
+          if (!claimSignIn()) return;
           clearError();
           var provider = btn.getAttribute('data-social-provider');
           try {
@@ -1304,7 +1321,7 @@ export function renderLoginPage(opts: {
               return;
             }
           } catch (err) {}
-          btn.disabled = false;
+          releaseSignIn();
           showError('Could not start sign-in. Please try again.');
         });
       });
@@ -1391,9 +1408,9 @@ export function renderLoginPage(opts: {
       // Form: send OTP (email mode) or hand off to client (handle mode)
       sendOtpForm.addEventListener('submit', async function(e) {
         e.preventDefault();
-        clearError();
         var raw = emailInput.value.trim();
-        if (!raw) return;
+        if (!raw || !claimSignIn()) return;
+        clearError();
         var btn = this.querySelector('button[type=submit]');
         var defaultLabel = loginMode === 'handle' ? 'Sign in' : 'Continue';
         btn.disabled = true;
@@ -1413,6 +1430,7 @@ export function renderLoginPage(opts: {
 
         var email = raw.toLowerCase();
         var result = await sendOtp(email);
+        releaseSignIn();
         btn.disabled = false;
         btn.textContent = defaultLabel;
 
@@ -1429,9 +1447,9 @@ export function renderLoginPage(opts: {
         // Collapse duplicate submits (auto-submit on 6th digit + Enter, OTP
         // autofill firing input on every box, paste+input pair, etc.). The
         // first call consumes the code; a second one races the redirect and
-        // flashes "Invalid OTP" before the page unloads.
-        if (verifying) return;
-        verifying = true;
+        // flashes "Invalid OTP" before the page unloads. The shared guard
+        // also keeps a verify from starting while another sign-in is.
+        if (!claimSignIn()) return;
         // Stop pinging the moment a verify is in flight — the redirect
         // is imminent and any further heartbeat is wasted.
         stopHeartbeat();
@@ -1525,10 +1543,10 @@ export function renderLoginPage(opts: {
             if (otpBoxes.length) otpBoxes[0].focus();
           }
         } finally {
-          // Leave the latch set on success: verifyOtp triggers a redirect,
+          // Keep the guard on success: verifyOtp triggers a redirect,
           // and we don't want late events to re-open the form mid-navigation.
           if (!result || result.error) {
-            verifying = false;
+            releaseSignIn();
             btn.disabled = false;
             btn.textContent = 'Verify';
             // Verify failed (typo, expired OTP, etc.) — the form is
@@ -1540,6 +1558,7 @@ export function renderLoginPage(opts: {
 
       // Send a new code (the element id predates the relabel)
       document.getElementById('btn-resend').addEventListener('click', async function() {
+        if (!claimSignIn()) return;
         clearError();
         this.disabled = true;
         this.textContent = 'Sending...';
@@ -1549,6 +1568,7 @@ export function renderLoginPage(opts: {
         // submit it. Bounce to /auth/abort instead.
         if (await abortIfFlowDead()) return;
         var result = await sendOtp(currentEmail);
+        releaseSignIn();
         this.disabled = false;
         this.textContent = 'Send a new code';
         if (result.error) {
@@ -1593,7 +1613,9 @@ export function renderLoginPage(opts: {
         if (otpBoxes.length) otpBoxes[0].focus();
         if (!otpAlreadySent) {
           // First load — fire the OTP send in the background.
+          claimSignIn();
           sendOtp(loginHint).then(function(result) {
+            releaseSignIn();
             if (result.error) {
               showError(result.error);
             } else {
