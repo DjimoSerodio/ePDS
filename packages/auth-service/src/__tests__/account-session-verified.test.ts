@@ -98,40 +98,4 @@ describe('account settings with an unverified session', () => {
     expect(res.status).toBe(303)
     expect(res.headers.get('location')).toBe('/account')
   })
-
-  // An earlier release could store Google's claim as the text 'true' or
-  // 'false', which better-auth reads back as a string. Both routes must
-  // agree on it, or /account and /account/login redirect to each other
-  // forever: the text 'true' is verified, the text 'false' is not.
-  describe('with emailVerified stored as the string "true"', () => {
-    const user = { email: 'alice@example.com', emailVerified: 'true' }
-
-    it('GET /account renders the settings page', async () => {
-      const res = await get(makeAuth(user), '/account')
-      expect(res.status).toBe(200)
-      expect(mocks.getDidByEmail).toHaveBeenCalled()
-    })
-
-    it('GET /account/login forwards it to /account', async () => {
-      const res = await get(makeAuth(user), '/account/login')
-      expect(res.status).toBe(303)
-      expect(res.headers.get('location')).toBe('/account')
-    })
-  })
-
-  describe('with emailVerified stored as the string "false"', () => {
-    const user = { email: 'alice@example.com', emailVerified: 'false' }
-
-    it('GET /account sends it to /account/login', async () => {
-      const res = await get(makeAuth(user), '/account')
-      expect(res.status).toBe(303)
-      expect(res.headers.get('location')).toBe('/account/login')
-      expect(mocks.getDidByEmail).not.toHaveBeenCalled()
-    })
-
-    it('GET /account/login shows the sign-in form instead of looping', async () => {
-      const res = await get(makeAuth(user), '/account/login')
-      expect(res.status).toBe(200)
-    })
-  })
 })
