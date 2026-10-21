@@ -25,11 +25,11 @@ const MESSAGES: Record<SocialSignInErrorCode, string> = {
   cancelled:
     'Sign-in was cancelled. You can try again, or sign in with your email instead.',
   email_unverified:
-    'That account could not confirm that this email address is yours. Please sign in with a code sent to your email instead.',
+    'Google could not confirm that this email address is yours. Please sign in with a code sent to your email instead.',
   no_email:
-    'That account did not share an email address. Please sign in with your email instead.',
+    'Google did not share an email address. Please sign in with your email instead.',
   failed:
-    'Could not sign in with that account. Please try again, or sign in with your email instead.',
+    'Could not sign in with Google. Please try again, or sign in with your email instead.',
 }
 
 /**
