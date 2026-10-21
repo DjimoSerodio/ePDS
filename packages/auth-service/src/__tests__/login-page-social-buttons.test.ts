@@ -75,7 +75,7 @@ describe('renderLoginPage social sign-in buttons', () => {
       expect(JSON.parse(init.body as string)).toEqual({
         provider,
         callbackURL: '/auth/complete',
-        errorCallbackURL: '/auth/complete',
+        errorCallbackURL: `/auth/complete?epds_social_provider=${provider}`,
       })
       expect(assign).toHaveBeenCalledWith(providerUrl)
     },

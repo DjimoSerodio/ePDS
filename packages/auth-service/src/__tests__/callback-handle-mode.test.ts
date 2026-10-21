@@ -306,6 +306,15 @@ describe('/auth/complete after a social sign-in that did not complete', () => {
     expect(url.searchParams.get('epds_social_error')).toBe(expected)
   })
 
+  it('carries the provider back so the message can name it', async () => {
+    const url = await redirectFrom(
+      makeAuth(null),
+      '/auth/complete?epds_social_provider=google&error=email_not_verified',
+    )
+    expect(url.searchParams.get('epds_social_error')).toBe('email_unverified')
+    expect(url.searchParams.get('epds_social_provider')).toBe('google')
+  })
+
   it('does not use a session the browser already holds', async () => {
     // An earlier, valid sign-in in the same browser must not be resumed
     // when this one was cancelled.

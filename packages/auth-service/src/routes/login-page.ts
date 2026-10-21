@@ -73,6 +73,7 @@ import { fetchDeviceAccountEmails } from '../lib/fetch-device-accounts.js'
 import { AUTH_FLOW_COOKIE, AUTH_FLOW_TTL_MS } from '../lib/auth-flow.js'
 import {
   SOCIAL_ERROR_PARAM,
+  SOCIAL_PROVIDER_PARAM,
   socialSignInErrorMessage,
 } from '../lib/social-sign-in-error.js'
 
@@ -483,7 +484,10 @@ export function createLoginPageRouter(ctx: AuthServiceContext): Router {
         otpLength: ctx.config.otpLength,
         otpCharset: ctx.config.otpCharset,
         heartbeatEnabled: heartbeatEnabledFor(req),
-        initialError: socialSignInErrorMessage(req.query[SOCIAL_ERROR_PARAM]),
+        initialError: socialSignInErrorMessage(
+          req.query[SOCIAL_ERROR_PARAM],
+          req.query[SOCIAL_PROVIDER_PARAM],
+        ),
       }),
     )
   })
@@ -1341,9 +1345,12 @@ export function renderLoginPage(opts: {
                 provider: provider,
                 callbackURL: '/auth/complete',
                 // Cancels and refusals come back to /auth/complete with
-                // ?error= too, which returns to this page with a message,
-                // rather than ending on better-auth's bare error page.
-                errorCallbackURL: '/auth/complete',
+                // ?error= too, which returns to this page with a message
+                // naming the provider, rather than ending on better-auth's
+                // bare error page.
+                errorCallbackURL:
+                  '/auth/complete?${SOCIAL_PROVIDER_PARAM}=' +
+                  encodeURIComponent(provider),
               }),
             });
             var data = await res.json().catch(function() { return {}; });

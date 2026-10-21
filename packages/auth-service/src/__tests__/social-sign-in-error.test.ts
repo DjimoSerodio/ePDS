@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   loginPageUrlWithError,
   SOCIAL_ERROR_PARAM,
+  SOCIAL_PROVIDER_PARAM,
   socialSignInErrorCode,
   socialSignInErrorMessage,
 } from '../lib/social-sign-in-error.js'
@@ -40,9 +41,41 @@ describe('socialSignInErrorMessage', () => {
   ])('has no message for %j', (code) => {
     expect(socialSignInErrorMessage(code)).toBeNull()
   })
+
+  it('names a known provider', () => {
+    expect(socialSignInErrorMessage('email_unverified', 'google')).toMatch(
+      /^Google could not confirm/,
+    )
+    expect(socialSignInErrorMessage('failed', 'google')).toMatch(
+      /^Could not sign in with Google\./,
+    )
+  })
+
+  it.each(['apple', '<b>x</b>', 'toString', '', undefined, ['google']])(
+    'falls back to a neutral name for provider %j',
+    (provider) => {
+      expect(socialSignInErrorMessage('email_unverified', provider)).toMatch(
+        /^That account could not confirm/,
+      )
+    },
+  )
 })
 
 describe('loginPageUrlWithError', () => {
+  it('carries a known provider and drops an unknown one', () => {
+    const flow = { requestUri: 'urn:x', clientId: null }
+    const known = new URL(
+      loginPageUrlWithError(flow, 'failed', 'google'),
+      'https://auth.example',
+    )
+    expect(known.searchParams.get(SOCIAL_PROVIDER_PARAM)).toBe('google')
+    const unknown = new URL(
+      loginPageUrlWithError(flow, 'failed', 'evil'),
+      'https://auth.example',
+    )
+    expect(unknown.searchParams.has(SOCIAL_PROVIDER_PARAM)).toBe(false)
+  })
+
   it('returns to the login page for the flow with the code', () => {
     const url = new URL(
       loginPageUrlWithError(

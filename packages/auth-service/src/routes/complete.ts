@@ -41,6 +41,7 @@ import { pingParRequest } from '../lib/ping-par-request.js'
 import { requireInternalEnv } from '../lib/require-internal-env.js'
 import { resolveRecoveryEmail } from '../lib/resolve-recovery-email.js'
 import {
+  SOCIAL_PROVIDER_PARAM,
   loginPageUrlWithError,
   socialSignInErrorCode,
 } from '../lib/social-sign-in-error.js'
@@ -251,7 +252,10 @@ export function createCompleteRouter(
         { flowId, error: req.query.error, code },
         'Social sign-in did not complete: returning to the login page',
       )
-      res.redirect(303, loginPageUrlWithError(flow, code))
+      res.redirect(
+        303,
+        loginPageUrlWithError(flow, code, req.query[SOCIAL_PROVIDER_PARAM]),
+      )
       return
     }
 

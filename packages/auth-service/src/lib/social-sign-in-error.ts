@@ -8,12 +8,29 @@
  * better-auth's bare /api/auth/error page. /auth/complete reduces the code
  * to one of a few {@link SocialSignInErrorCode}s and sends the user back to
  * the login page for the same flow with `epds_social_error=<code>`, where
- * it is shown as a fixed message. Nothing from the query string is ever
- * reflected into the page.
+ * it is shown as a fixed message. The button also puts its provider in
+ * the errorCallbackURL (`epds_social_provider`), so the message can name
+ * it; only names from {@link PROVIDER_NAMES} are ever shown. Nothing else
+ * from the query string is reflected into the page.
  */
 
 /** Query parameter that carries the error back to GET /oauth/authorize. */
 export const SOCIAL_ERROR_PARAM = 'epds_social_error'
+
+/** Query parameter that carries the provider through the same round trip. */
+export const SOCIAL_PROVIDER_PARAM = 'epds_social_provider'
+
+/** Display names for the social providers the login page can offer. */
+const PROVIDER_NAMES: Record<string, string> = {
+  google: 'Google',
+  github: 'GitHub',
+}
+
+function providerName(provider: unknown): string | null {
+  return typeof provider === 'string' && Object.hasOwn(PROVIDER_NAMES, provider)
+    ? PROVIDER_NAMES[provider]
+    : null
+}
 
 export type SocialSignInErrorCode =
   | 'cancelled'
@@ -21,16 +38,18 @@ export type SocialSignInErrorCode =
   | 'no_email'
   | 'failed'
 
-const MESSAGES: Record<SocialSignInErrorCode, string> = {
-  cancelled:
-    'Sign-in was cancelled. You can try again, or sign in with your email instead.',
-  email_unverified:
-    'Google could not confirm that this email address is yours. Please sign in with a code sent to your email instead.',
-  no_email:
-    'Google did not share an email address. Please sign in with your email instead.',
-  failed:
-    'Could not sign in with Google. Please try again, or sign in with your email instead.',
-}
+// `name` is the provider's display name, or null when it is not known.
+const MESSAGES: Record<SocialSignInErrorCode, (name: string | null) => string> =
+  {
+    cancelled: () =>
+      'Sign-in was cancelled. You can try again, or sign in with your email instead.',
+    email_unverified: (name) =>
+      `${name ?? 'That account'} could not confirm that this email address is yours. Please sign in with a code sent to your email instead.`,
+    no_email: (name) =>
+      `${name ?? 'That account'} did not share an email address. Please sign in with your email instead.`,
+    failed: (name) =>
+      `Could not sign in with ${name ?? 'that account'}. Please try again, or sign in with your email instead.`,
+  }
 
 /**
  * Reduce an error code from better-auth's OAuth callback (or the provider,
@@ -59,10 +78,16 @@ export function socialSignInErrorCode(
   }
 }
 
-/** The message for an `epds_social_error` value, or null if it is unknown. */
-export function socialSignInErrorMessage(code: unknown): string | null {
+/**
+ * The message for an `epds_social_error` value, naming the provider when
+ * it is a known one, or null if the code is unknown.
+ */
+export function socialSignInErrorMessage(
+  code: unknown,
+  provider?: unknown,
+): string | null {
   return typeof code === 'string' && Object.hasOwn(MESSAGES, code)
-    ? MESSAGES[code as SocialSignInErrorCode]
+    ? MESSAGES[code as SocialSignInErrorCode](providerName(provider))
     : null
 }
 
@@ -73,9 +98,13 @@ export function socialSignInErrorMessage(code: unknown): string | null {
 export function loginPageUrlWithError(
   flow: { requestUri: string; clientId: string | null },
   code: SocialSignInErrorCode,
+  provider?: unknown,
 ): string {
   const params = new URLSearchParams({ request_uri: flow.requestUri })
   if (flow.clientId) params.set('client_id', flow.clientId)
   params.set(SOCIAL_ERROR_PARAM, code)
+  if (providerName(provider)) {
+    params.set(SOCIAL_PROVIDER_PARAM, provider as string)
+  }
   return `/oauth/authorize?${params.toString()}`
 }
