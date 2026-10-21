@@ -1251,19 +1251,22 @@ export function renderLoginPage(opts: {
       var socialButtons = Array.prototype.slice.call(
         document.querySelectorAll('[data-social-provider]'),
       );
+      // The buttons that start a sign-in from the first step, shown as
+      // disabled while any attempt holds the guard.
+      var startButtons = socialButtons.concat(sendOtpBtn ? [sendOtpBtn] : []);
       var signInBusy = false;
-      function setSocialButtonsDisabled(disabled) {
-        socialButtons.forEach(function(btn) { btn.disabled = disabled; });
+      function setStartButtonsDisabled(disabled) {
+        startButtons.forEach(function(btn) { btn.disabled = disabled; });
       }
       function claimSignIn() {
         if (signInBusy) return false;
         signInBusy = true;
-        setSocialButtonsDisabled(true);
+        setStartButtonsDisabled(true);
         return true;
       }
       function releaseSignIn() {
         signInBusy = false;
-        setSocialButtonsDisabled(false);
+        setStartButtonsDisabled(false);
       }
 
       // better-auth's /sign-in/social is POST-only (a GET is a 404), so

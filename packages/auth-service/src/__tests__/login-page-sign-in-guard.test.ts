@@ -170,6 +170,18 @@ describe('login page sign-in guard', () => {
     expect(page.buttons.github.disabled).toBe(false)
   })
 
+  it('disables the email-code button while a social sign-in is in flight', async () => {
+    const held = deferred()
+    const page = runPage({ [SOCIAL]: held.answer })
+
+    const inFlight = page.buttons.google.click()
+    expect(page.elements.sendOtpButton.disabled).toBe(true)
+
+    held.resolve(500, {})
+    await inFlight
+    expect(page.elements.sendOtpButton.disabled).toBe(false)
+  })
+
   it('lets the code that was just sent be verified', async () => {
     const page = runPage()
 
